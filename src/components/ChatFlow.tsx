@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -15,7 +15,7 @@ import ChatNode from './nodes/ChatNode';
 import { useSessionStore } from '../stores/sessionStore';
 import { useModelStore } from '../stores/modelStore';
 import { useThemeStore } from '../stores/themeStore';
-import { ChatNode as ChatNodeType, UsageStats } from '../types';
+import { ChatNode as ChatNodeType, NodeData, UsageStats } from '../types';
 import { sendChatRequest } from '../services/apiService';
 import { Share2, LayoutGrid, FileUp } from 'lucide-react';
 import { exportToMindmap } from '../utils/exportUtils';
@@ -60,6 +60,43 @@ function resolveNodePosition(
   return { x: base.x, y: base.y + NODE_HEIGHT + V_GAP };
 }
 
+/**
+ * 组装一个 React Flow 节点对象。
+ *
+ * `previous` 必须摊在最前面 —— 这里不能用「重建一个干净对象」的写法。
+ * React Flow 会把量到的 width/height 写回我们传进去的节点对象（applyChanges 的
+ * dimensions 分支），而它判断「这条边能不能画」的依据就是 node.width && node.height
+ * （源码 getNodeData 里的 isValid）。重建时把这两个字段丢掉，边会直接 return null
+ * 不渲染 —— 直到下一次重新测量（拖动节点、点击）把尺寸写回来，连线才突然出现。
+ * 这就是「新加的节点连线不完整，点一下或挪一下才出来」的原因。
+ */
+function buildFlowNode(
+  node: ChatNodeType,
+  position: { x: number; y: number },
+  data: NodeData,
+  previous?: Node
+): Node {
+  return {
+    ...previous,
+    id: node.id,
+    type: node.type,
+    position,
+    data,
+  };
+}
+
+function buildFlowEdges(nodes: ChatNodeType[]): Edge[] {
+  return nodes
+    .filter(node => node.parentId)
+    .map(node => ({
+      id: `e-${node.parentId}-${node.id}`,
+      source: node.parentId!,
+      target: node.id,
+      type: 'smoothstep',
+      animated: false,
+    }));
+}
+
 const nodeTypes = {
   system: SystemNode,
   chat: ChatNode,
@@ -81,6 +118,25 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const [nodeDimensions, setNodeDimensions] = useState<Record<string, { width: number, height: number }>>({});
   // 刚新建的节点 id。渲染完成后把它平移到视野中间，否则可能落在屏幕外面。
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+
+  // 上一次交给 React Flow 的节点对象。两个用途：
+  //   1) 原样复用没变化的节点，让 React Flow 跳过它的重渲染；
+  //   2) 重建时把 React Flow 写回来的 width/height 等字段带过去（详见 buildFlowNode）。
+  const nodeCacheRef = useRef<Map<string, Node>>(new Map());
+  // 当前 edges 的结构指纹，避免结构没变时反复 setEdges
+  const edgeSignatureRef = useRef('');
+
+  /**
+   * 只有图的「形状」变了才更新 edges。
+   * 流式输出时每来一个 token 都会走到提交这一步，无脑 setEdges 会让 React Flow
+   * 反复重建全部边。
+   */
+  const commitEdges = useCallback((next: Edge[]) => {
+    const signature = next.map(e => e.id).join('|');
+    if (signature === edgeSignatureRef.current) return;
+    edgeSignatureRef.current = signature;
+    setEdges(next);
+  }, []);
   const [streamingResponses, setStreamingResponses] = useState<Record<string, string>>({});
   // 思维链单独一个 map。它以独立通道（delta.reasoning_content）到达，
   // 而且整段都在正文之前，所以不会和正文的更新叠加成「每 chunk 两次重渲染」。
@@ -204,38 +260,18 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         }
       }
       
-      return {
-        id: node.id,
-        type: node.type,
-        position,
-        data: { 
-          node,
-          streamingResponse: streamingResponses[node.id] || null,
-          streamingReasoning: streamingReasoning[node.id] || null,
-          onAddChild: handleAddChildNode,
-          onEdit: handleEditNode,
-          onDelete: handleDeleteNode,
-          onRetry: handleRetryNode,
-          onModelChange: handleModelChange,
-          onTemperatureChange: handleTemperatureChange,
-          onMaxTokensChange: handleMaxTokensChange,
-          isRoot: node.type === 'system'
-        }
-      };
+      return buildFlowNode(node, position, {
+        ...nodeCallbacks,
+        node,
+        streamingResponse: streamingResponses[node.id] || null,
+        streamingReasoning: streamingReasoning[node.id] || null,
+        isRoot: node.type === 'system'
+      }, nodeCacheRef.current.get(node.id));
     });
-  
-    const reactFlowEdges = session.nodes
-      .filter(node => node.parentId)
-      .map(node => ({
-        id: `e-${node.parentId}-${node.id}`,
-        source: node.parentId!,
-        target: node.id,
-        type: 'smoothstep',
-        animated: false,
-      }));
-  
+
+    nodeCacheRef.current = new Map(reactFlowNodes.map(n => [n.id, n]));
     setNodes(reactFlowNodes);
-    setEdges(reactFlowEdges);
+    commitEdges(buildFlowEdges(session.nodes));
   
     // 调整视图以显示所有节点
     setTimeout(() => {
@@ -648,47 +684,73 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     setPendingFocusId(newNode.id);
   };
 
+  // 节点 data 里的回调必须是稳定引用 —— 只要引用变了，所有节点都会重渲染。
+  // 但回调本身又必须读到最新的 session / state，所以用 ref 转发：
+  // 引用恒定，真正被调用时再去取当前渲染里那份实现。
+  const latestHandlers = useRef({
+    handleAddChildNode, handleEditNode, handleDeleteNode, handleRetryNode,
+    handleModelChange, handleTemperatureChange, handleMaxTokensChange,
+  });
+  latestHandlers.current = {
+    handleAddChildNode, handleEditNode, handleDeleteNode, handleRetryNode,
+    handleModelChange, handleTemperatureChange, handleMaxTokensChange,
+  };
+
+  const nodeCallbacks = useMemo((): Omit<NodeData, 'node' | 'isRoot' | 'streamingResponse' | 'streamingReasoning'> => ({
+    onAddChild: (parentId: string) => latestHandlers.current.handleAddChildNode(parentId),
+    onEdit: (nodeId: string, content: string, type: 'user' | 'assistant' | 'system') =>
+      latestHandlers.current.handleEditNode(nodeId, content, type),
+    onDelete: (nodeId: string) => latestHandlers.current.handleDeleteNode(nodeId),
+    onRetry: (nodeId: string) => latestHandlers.current.handleRetryNode(nodeId),
+    onModelChange: (nodeId: string, modelId: string) => latestHandlers.current.handleModelChange(nodeId, modelId),
+    onTemperatureChange: (nodeId: string, temperature: number) =>
+      latestHandlers.current.handleTemperatureChange(nodeId, temperature),
+    onMaxTokensChange: (nodeId: string, maxTokens: number) =>
+      latestHandlers.current.handleMaxTokensChange(nodeId, maxTokens),
+  }), []);
+
   useEffect(() => {
-    console.debug("session or nodes changed");
     if (!session?.nodes) return;
   
     // 创建新的节点数组，确保使用节点保存的位置
+    const previousNodes = nodeCacheRef.current;
+    const nextCache = new Map<string, Node>();
+
     const reactFlowNodes = session.nodes.map(node => {
       // 保存过位置就用保存的；没有（手工改过的导入文件、根节点）退回「父节点正下方」
       const position = resolveNodePosition(node, session.nodes);
-      
-      return {
-        id: node.id,
-        type: node.type,
-        position,
-        data: { 
-          node,
-          streamingResponse: streamingResponses[node.id] || null,
-          streamingReasoning: streamingReasoning[node.id] || null,
-          onAddChild: handleAddChildNode,
-          onEdit: handleEditNode,
-          onDelete: handleDeleteNode,
-          onRetry: handleRetryNode,
-          onModelChange: handleModelChange,
-          onTemperatureChange: handleTemperatureChange,
-          onMaxTokensChange: handleMaxTokensChange,
-          isRoot: node.type === 'system'
-        }
-      };
+      const liveResponse = streamingResponses[node.id] || null;
+      const liveReasoning = streamingReasoning[node.id] || null;
+      const previous = previousNodes.get(node.id);
+
+      // 完全没变就复用同一个对象引用 —— React Flow 会跳过这个节点的重渲染。
+      // 否则流式输出时每来一个 token 都把全部节点换成新对象，整张图跟着重画。
+      if (
+        previous &&
+        previous.data.node === node &&
+        previous.data.streamingResponse === liveResponse &&
+        previous.data.streamingReasoning === liveReasoning &&
+        previous.position.x === position.x &&
+        previous.position.y === position.y
+      ) {
+        nextCache.set(node.id, previous);
+        return previous;
+      }
+
+      const next = buildFlowNode(node, position, {
+        ...nodeCallbacks,
+        node,
+        streamingResponse: liveResponse,
+        streamingReasoning: liveReasoning,
+        isRoot: node.type === 'system'
+      }, previous);
+      nextCache.set(node.id, next);
+      return next;
     });
-  
-    const reactFlowEdges = session.nodes
-      .filter(node => node.parentId)
-      .map(node => ({
-        id: `e-${node.parentId}-${node.id}`,
-        source: node.parentId!,
-        target: node.id,
-        type: 'smoothstep',
-        animated: false,
-      }));
-  
+
+    nodeCacheRef.current = nextCache;
     setNodes(reactFlowNodes);
-    setEdges(reactFlowEdges);
+    commitEdges(buildFlowEdges(session.nodes));
 
   // Keep node callbacks bound to the current render without rebuilding this effect recursively.
   // eslint-disable-next-line react-hooks/exhaustive-deps
