@@ -159,6 +159,14 @@ neutral: { 50: 'rgb(var(--c-neutral-50) / <alpha-value>)', ... }
 > 实现上有个坑：React Flow 的 `setCenter` **不传 `zoom` 时会回落到 `maxZoom`**
 > （默认 2 倍），也就是会突然放大。所以必须显式传当前缩放。
 
+### 7. 新建节点后直接就能打字
+
+新建节点后光标自动落在输入框里，不用再点一下。
+
+> React Flow 会把每个节点包装成可聚焦元素（`tabIndex=0`）来支持键盘操作，
+> 它的聚焦可能发生在我们之后、把光标抢走，所以挂载后还会补一次（有 latch，
+> 只补一次；如果你已经在别的输入框里打字就不抢）。
+
 ---
 
 ## 二、修复（附根因）
@@ -255,6 +263,20 @@ return { ...previous, id: node.id, type: node.type, position, data };
 - 节点 `data` 里的 7 个回调改成**稳定引用**（用 ref 转发到最新实现）。
   否则回调引用每次都变，所有节点都得重渲染 —— 但回调又必须读到最新的
   `session`，所以不能简单 `useCallback` 缓存
+
+### 流式输出时鼠标光标疯狂抖动
+
+生成文本时把鼠标放在节点上，光标会在「手」和「箭头」之间快速来回切换。
+
+React Flow 给 `.react-flow__pane` / `.react-flow__viewport` 设了 `cursor: grab`，
+而节点内部是默认光标。生成文本时 Markdown 预览的 DOM 会被反复重建
+（md-editor 先写一遍 HTML，再在 effect 里跑高亮 / 公式补处理），鼠标底下的元素
+一直在换 —— 落在节点里是箭头，一瞬间落到画布上就变成手。
+
+现在把画布和节点内部**统一成同一个光标**，不管底下换成谁都算出同一个结果，
+抖动就不可能发生。节点本身可拖拽，所以内圈用 `grab` 比箭头更能说明
+「这张卡片可以拖」；`button` / `a` / `select` / 标记了 `cursor-pointer` 的元素
+仍然是 `pointer`，输入框和连接点也各自保留 `text` / `crosshair`。
 
 ### 上传文件后节点掉在原点
 
@@ -428,6 +450,11 @@ c942155  fix: 静默失败、默认模型、切模型时的系统提示词
 f1598a9  chore: 提交 bun.lock
 4a229ee  fix: 新节点落在看得见的地方
 c777394  fix: 新节点放进空位，并让视口跟随
+b1625ae  fix: 保住 React Flow 的节点测量值（修连线不显示 / 流式闪屏）
+78fc17d  chore: 重命名为 Tree AI Plus
+01d91c1  docs: 加上 PLUS.md
+826a1fb  fix: 流式输出时光标不再抖动
+d9ee4c7  feat: 新节点的输入框自动取得焦点
 ```
 
 ---
