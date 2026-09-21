@@ -39,6 +39,27 @@ const NODE_HEIGHT = 420;
 const H_GAP = 220;
 const V_GAP = 140;
 
+/**
+ * 节点的有效坐标。
+ *
+ * 有保存的位置就用保存的；没有就退回「父节点正下方」（根节点是原点）。
+ * 建图的渲染路径和新节点的落点计算都走这一个函数，两边才不会打架。
+ *
+ * 两点是刻意的：
+ *   - 只用常量算，不用实测尺寸。否则节点一边流式输出一边长高，坐标会跟着跳。
+ *   - 只往上看一层，不递归。导入文件理论上能造出 parentId 环，递归会爆栈。
+ */
+function resolveNodePosition(
+  node: ChatNodeType,
+  all: ChatNodeType[]
+): { x: number; y: number } {
+  if (node.position) return node.position;
+  if (!node.parentId) return { x: 0, y: 0 };
+  const parent = all.find(n => n.id === node.parentId);
+  const base = parent?.position ?? { x: 0, y: 0 };
+  return { x: base.x, y: base.y + NODE_HEIGHT + V_GAP };
+}
+
 const nodeTypes = {
   system: SystemNode,
   chat: ChatNode,
@@ -58,6 +79,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const reactFlowInstance = useReactFlow();
   const abortControllerRef = useRef<Record<string, AbortController>>({});
   const [nodeDimensions, setNodeDimensions] = useState<Record<string, { width: number, height: number }>>({});
+  // 刚新建的节点 id。渲染完成后把它平移到视野中间，否则可能落在屏幕外面。
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [streamingResponses, setStreamingResponses] = useState<Record<string, string>>({});
   // 思维链单独一个 map。它以独立通道（delta.reasoning_content）到达，
   // 而且整段都在正文之前，所以不会和正文的更新叠加成「每 chunk 两次重渲染」。
@@ -233,29 +256,45 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
    *      连第一个子节点都会和父节点重叠。
    * 这就是「聊完一轮，新节点位置很奇怪」的成因。
    *
-   * 现在按实测尺寸算（nodeDimensions 由 React Flow 量到），量不到才退回常量。
+   * 尺寸按实测值算（nodeDimensions 由 React Flow 量到），量不到才退回常量。
+   *
+   * 数据源用 session.nodes（落盘的那份），不用 React Flow 的 nodes state ——
+   * 后者是异步重建的，刚删完节点时可能还带着影子，算出来的位置会莫名其妙。
    */
-  const computeChildPosition = useCallback((parentId: string, flowNodes: Node[]) => {
-    const parent = flowNodes.find(n => n.id === parentId);
+  const computeChildPosition = useCallback((parentId: string) => {
+    const all = session?.nodes ?? [];
+    const parent = all.find(n => n.id === parentId);
     if (!parent) return { x: 0, y: 0 };
 
     const sizeOf = (id: string) => nodeDimensions[id] || { width: NODE_WIDTH, height: NODE_HEIGHT };
-    const siblings = flowNodes.filter(n => n.data?.node?.parentId === parentId);
+    const parentPos = resolveNodePosition(parent, all);
+    const parentSize = sizeOf(parentId);
+    // 父节点水平中心减去自身一半宽 = 「居中在父节点正下方」
+    const centeredX = parentPos.x + (parentSize.width - NODE_WIDTH) / 2;
+
+    const siblings = all.filter(n => n.parentId === parentId);
 
     if (siblings.length === 0) {
-      // 独子：水平居中在父节点正下方，垂直方向留出一整段间距
-      const parentSize = sizeOf(parentId);
-      return {
-        x: parent.position.x + (parentSize.width - NODE_WIDTH) / 2,
-        y: parent.position.y + parentSize.height + V_GAP,
-      };
+      // 独子：居中在父节点正下方，垂直方向留出一整段间距
+      return { x: centeredX, y: parentPos.y + parentSize.height + V_GAP };
     }
 
-    // 已有分支：和它们排在同一行，放在最右边那个的右侧
-    const rowY = Math.min(...siblings.map(n => n.position.y));
-    const rightEdge = Math.max(...siblings.map(n => n.position.x + sizeOf(n.id).width));
-    return { x: rightEdge + H_GAP, y: rowY };
-  }, [nodeDimensions]);
+    // 已有分支：跟它们排在同一行。
+    // 从左往右找第一个放得下的空位，而不是一律排在最右边 —— 否则
+    // 「加一个、删掉、再加」会跳过那个空出来的位置，新节点一次比一次往右跑。
+    const rowY = Math.min(...siblings.map(n => resolveNodePosition(n, all).y));
+    const byX = [...siblings].sort(
+      (a, b) => resolveNodePosition(a, all).x - resolveNodePosition(b, all).x
+    );
+
+    let x = centeredX;
+    for (const sibling of byX) {
+      const siblingPos = resolveNodePosition(sibling, all);
+      if (x + NODE_WIDTH + H_GAP <= siblingPos.x) break; // 这个空位放得下
+      x = Math.max(x, siblingPos.x + sizeOf(sibling.id).width + H_GAP);
+    }
+    return { x, y: rowY };
+  }, [session, nodeDimensions]);
 
   const handleAddChildNode = (parentId: string) => {
     if (!session || !defaultModelId) return;
@@ -273,10 +312,11 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       temperature: parentNode.temperature || 0.7,
       maxTokens: parentNode.maxTokens || 8192,
       createdAt: new Date().toISOString(),
-      position: computeChildPosition(parentId, nodes)
+      position: computeChildPosition(parentId)
     };
 
     addNodeToSession(sessionId, newNode);
+    setPendingFocusId(newNode.id);
   };
 
   const handleEditNode = (nodeId: string, content: string, type: 'user' | 'assistant' | 'system') => {
@@ -601,10 +641,11 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       createdAt: new Date().toISOString(),
       // 上传的文件也是个 chat 节点，同样要走落点计算 ——
       // 不写 position 的话它会因为没有位置而掉到原点，压在系统节点上
-      position: computeChildPosition(systemNode.id, nodes),
+      position: computeChildPosition(systemNode.id),
     };
 
     addNodeToSession(sessionId, newNode);
+    setPendingFocusId(newNode.id);
   };
 
   useEffect(() => {
@@ -612,18 +653,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     if (!session?.nodes) return;
   
     // 创建新的节点数组，确保使用节点保存的位置
-    // 没有保存位置的节点（例如手工改过的导入文件）退回到「父节点正下方」，
-    // 而不是全部堆在原点。只用常量算，位置稳定、不会随渲染跳动。
-    const fallbackPosition = (node: ChatNodeType) => {
-      if (!node.parentId) return { x: 0, y: 0 };
-      const parent = session.nodes.find(n => n.id === node.parentId);
-      const base = parent?.position ?? { x: 0, y: 0 };
-      return { x: base.x, y: base.y + NODE_HEIGHT + V_GAP };
-    };
-
     const reactFlowNodes = session.nodes.map(node => {
-      // 优先使用节点保存的位置
-      const position = node.position ?? fallbackPosition(node);
+      // 保存过位置就用保存的；没有（手工改过的导入文件、根节点）退回「父节点正下方」
+      const position = resolveNodePosition(node, session.nodes);
       
       return {
         id: node.id,
@@ -661,6 +693,23 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   // Keep node callbacks bound to the current render without rebuilding this effect recursively.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.nodes, sessionId, streamingResponses, streamingReasoning]); // 添加 sessionId 到依赖数组
+
+  // 新建的节点可能落在视口外面（分支一多就往右排），所以渲染完成后把它平移到视野中间。
+  //
+  // setCenter 的 zoom 必须显式传：React Flow 在不传 zoom 时会用 maxZoom（默认 2），
+  // 也就是会突然放大。这里保持当前缩放，只做平移。
+  useEffect(() => {
+    if (!pendingFocusId) return;
+    const target = nodes.find(n => n.id === pendingFocusId);
+    if (!target) return;
+
+    setPendingFocusId(null);
+    reactFlowInstance.setCenter(
+      target.position.x + NODE_WIDTH / 2,
+      target.position.y + NODE_HEIGHT / 2,
+      { duration: 450, zoom: reactFlowInstance.getZoom() }
+    );
+  }, [pendingFocusId, nodes, reactFlowInstance]);
   
 
   if (!session) {
