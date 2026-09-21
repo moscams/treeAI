@@ -3,6 +3,20 @@
 @tailwind utilities;
 
 :root {
+  /* 中性色阶的 RGB 通道值（tailwind.config.js 里以 rgb(var(...) / <alpha-value>) 引用）。
+     夜间模式整组替换这些变量，即可让全项目的 neutral 颜色反过来。 */
+  --c-neutral-50: 250 250 250;
+  --c-neutral-100: 245 245 245;
+  --c-neutral-200: 229 229 229;
+  --c-neutral-300: 212 212 212;
+  --c-neutral-400: 163 163 163;
+  --c-neutral-500: 115 115 115;
+  --c-neutral-600: 82 82 82;
+  --c-neutral-700: 64 64 64;
+  --c-neutral-800: 38 38 38;
+  --c-neutral-900: 23 23 23;
+  --c-neutral-950: 10 10 10;
+
   /* 极简主义中性色调 */
   --color-background: #fafafa;
   --color-surface: #ffffff;
@@ -245,4 +259,142 @@ body {
 
 .gradient-outline-button:hover {
   background: #f5f5f5;
+}
+
+/* ============================================================
+   夜间模式
+   策略：中性色阶换成 CSS 变量（见 :root），再针对“写死了颜色”
+   的地方做覆盖。用 @apply neutral-* 的声明会自动跟随，无需覆盖。
+   ============================================================ */
+html.dark {
+  --c-neutral-50: 18 18 18;
+  --c-neutral-100: 28 28 28;
+  --c-neutral-200: 42 42 42;
+  --c-neutral-300: 58 58 58;
+  --c-neutral-400: 110 110 110;
+  --c-neutral-500: 143 143 143;
+  --c-neutral-600: 178 178 178;
+  --c-neutral-700: 209 209 209;
+  --c-neutral-800: 232 232 232;
+  /* 注意：900 在浅色下是“主按钮背景”，夜间要变亮才有对比度，
+     所以配 text-white 的地方必须同时把文字反过来（见下面的 .text-white 覆盖）。 */
+  --c-neutral-900: 242 242 242;
+  --c-neutral-950: 255 255 255;
+
+  --color-background: #121212;
+  --color-surface: #1c1c1c;
+  --color-border: #2a2a2a;
+  --color-divider: #232323;
+  --color-text: #ededed;
+  --color-text-light: #b0b0b0;
+  --color-text-muted: #8a8a8a;
+}
+
+/* 写死了 white / 黑色的类，需要逐个覆盖 */
+html.dark .bg-white {
+  background-color: rgb(var(--c-neutral-100));
+}
+
+html.dark .text-white {
+  /* 全项目的 text-white 都配在 bg-neutral-900 上，夜间 900 变亮，文字要变深 */
+  color: rgb(23 23 23);
+}
+
+html.dark .border-white {
+  border-color: rgb(var(--c-neutral-300));
+}
+
+/* @apply bg-white 会把 white 内联进类定义，拿不到 .bg-white 的覆盖，得单独写 */
+html.dark .system-node {
+  background-color: rgb(var(--c-neutral-100));
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .sidebar {
+  background-color: rgb(22 22 22);
+}
+
+/* 节点内的渐变背景 */
+html.dark .user-message {
+  background: linear-gradient(to bottom, #1f1f1f, #1a1a1a);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .assistant-message {
+  background: linear-gradient(to bottom, #191919, #141414);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+html.dark .chat-node-header,
+html.dark .system-node-header {
+  background: #232323;
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
+html.dark .settings-panel {
+  background: #1c1c1c;
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
+/* 主按钮：夜间变浅底深字 */
+html.dark .gradient-button,
+html.dark .gradient-primary-button,
+html.dark .gradient-accent-button {
+  background: #ededed;
+  color: #171717;
+}
+
+html.dark .gradient-button:hover,
+html.dark .gradient-primary-button:hover,
+html.dark .gradient-accent-button:hover {
+  background: #ffffff;
+}
+
+html.dark .gradient-outline-button {
+  background: #1c1c1c;
+  border-color: #2e2e2e;
+}
+
+html.dark .gradient-outline-button:hover {
+  background: #262626;
+}
+
+html.dark .send-button:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .react-flow__handle {
+  border-color: #171717;
+}
+
+html.dark .react-flow__node {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+}
+
+html.dark .react-flow__node:hover {
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+}
+
+/* React Flow 自带的缩放控件 */
+html.dark .react-flow__controls-button {
+  background: #232323;
+  border-bottom-color: #333333;
+  color: #d4d4d4;
+}
+
+html.dark .react-flow__controls-button:hover {
+  background: #2e2e2e;
+}
+
+html.dark .react-flow__controls-button svg {
+  fill: #d4d4d4;
+}
+
+/* Markdown 预览：prose 默认是浅色排版，夜间反色 */
+html.dark .md-preview {
+  @apply prose-invert;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 125, 0.5);
 }

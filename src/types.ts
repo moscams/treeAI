@@ -2,6 +2,21 @@
 
 export type ReasoningEffort = 'default' | 'none' | 'low' | 'high' | 'max';
 
+/** 单次请求的 token 用量统计，来自服务商返回的 usage 字段 */
+export interface UsageStats {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  /** 命中上下文缓存的输入 token 数 */
+  cacheHitTokens: number;
+  /** 未命中缓存的输入 token 数 */
+  cacheMissTokens: number;
+  /** 思考消耗的 token（部分服务商不返回） */
+  reasoningTokens?: number;
+  /** 从发出请求到收到最后一个分片的耗时，用于估算 token/s */
+  durationMs?: number;
+}
+
 export interface Model {
   id: string;
   name: string;
@@ -43,6 +58,8 @@ export interface ChatNode {
    * 仅本地留存展示用，绝不会回传给 API —— 带 tools 时回传才需要，不带 tools 传了也会被忽略。
    */
   reasoning?: string;
+  /** 最近一次请求的 token 用量统计 */
+  usage?: UsageStats;
   position?: NodePosition;
 }
 

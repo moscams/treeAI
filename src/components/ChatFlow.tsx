@@ -14,7 +14,8 @@ import SystemNode from './nodes/SystemNode';
 import ChatNode from './nodes/ChatNode';
 import { useSessionStore } from '../stores/sessionStore';
 import { useModelStore } from '../stores/modelStore';
-import { ChatNode as ChatNodeType } from '../types';
+import { useThemeStore } from '../stores/themeStore';
+import { ChatNode as ChatNodeType, UsageStats } from '../types';
 import { sendChatRequest } from '../services/apiService';
 import { Share2, LayoutGrid, FileUp } from 'lucide-react';
 import { exportToMindmap } from '../utils/exportUtils';
@@ -33,6 +34,7 @@ interface ChatFlowProps {
 const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const { sessions, addNodeToSession, updateNodeInSession, deleteNodeFromSession } = useSessionStore();
   const { models, defaultModelId } = useModelStore();
+  const { theme } = useThemeStore();
   const session = sessions.find(s => s.id === sessionId);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -278,7 +280,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       ...node,
       isStreaming: true,
       error: undefined,
-      reasoning: undefined
+      reasoning: undefined,
+      usage: undefined
     });
     
     // 初始化流式响应
@@ -290,6 +293,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     // 本次请求累积的正文与思维链
     let accumulatedResponse = '';
     let accumulatedReasoning = '';
+    let accumulatedUsage: UsageStats | undefined;
+    const startedAt = Date.now();
     
     try {
       const systemNode = session.nodes.find(n => n.type === 'system');
@@ -339,6 +344,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         // 思维链单独累积，不参与正文渲染，也不会回传给 API
         onReasoning: (chunk) => {
           accumulatedReasoning += chunk;
+        },
+        onUsage: (u) => {
+          accumulatedUsage = u;
         }
       });
       
@@ -347,6 +355,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         ...node,
         assistantMessage: accumulatedResponse,
         reasoning: accumulatedReasoning || undefined,
+        usage: accumulatedUsage
+          ? { ...accumulatedUsage, durationMs: Date.now() - startedAt }
+          : undefined,
         isStreaming: false
       });
       
@@ -366,7 +377,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         isStreaming: false,
         error: message,
         // 中途失败也保留已经产生的思维链，便于排查
-        reasoning: accumulatedReasoning || undefined
+        reasoning: accumulatedReasoning || undefined,
+        usage: accumulatedUsage
+          ? { ...accumulatedUsage, durationMs: Date.now() - startedAt }
+          : undefined
       });
       
       // 清除流式状态
@@ -559,7 +573,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         fitView={false}
         defaultEdgeOptions={{ 
           type: 'smoothstep',
-          style: { stroke: '#e5e5e5', strokeWidth: 1 }
+          style: { stroke: '#a3a3a3', strokeWidth: 1.5 }
         }}
         onNodesChange={(changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds))}
         onNodeDragStop={(event, node) => {
@@ -579,7 +593,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
           });
         }}
       >
-        <Background color="#f5f5f5" gap={18} size={0.5} />
+        <Background color={theme === 'dark' ? '#2f2f2f' : '#f5f5f5'} gap={18} size={0.5} />
         <Controls className="bg-white border border-neutral-200 rounded-md shadow-minimal" />
       </ReactFlow>
       

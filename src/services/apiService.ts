@@ -1,4 +1,4 @@
-import { Model } from '../types';
+import { Model, UsageStats } from '../types';
 import { resolveReasoningEffort } from '../utils/reasoningEffort';
 
 interface ChatMessage {
@@ -15,10 +15,12 @@ interface ChatRequestOptions {
   onChunk: (chunk: string) => void;
   /** 思维链分片回调。与正文分开，不会混进 messages */
   onReasoning?: (chunk: string) => void;
+  /** token 用量回调。DeepSeek 会在最后一个分片上带 usage */
+  onUsage?: (usage: UsageStats) => void;
 }
 
 export async function sendChatRequest(options: ChatRequestOptions): Promise<void> {
-  const { messages, model, temperature, maxTokens, signal, onChunk, onReasoning } = options;
+  const { messages, model, temperature, maxTokens, signal, onChunk, onReasoning, onUsage } = options;
   
   try {
     // 去掉结尾多余的斜杠，避免拼出 //chat/completions
@@ -84,6 +86,21 @@ export async function sendChatRequest(options: ChatRequestOptions): Promise<void
           try {
             const json = JSON.parse(data);
             const choice = json.choices?.[0];
+            
+            // token 用量。DeepSeek 会把统计挂在最后一个分片上，
+            // 不需要 stream_options.include_usage（少发一个参数就少一个兼容性风险）。
+            if (json.usage && onUsage) {
+              const u = json.usage;
+              onUsage({
+                promptTokens: u.prompt_tokens ?? 0,
+                completionTokens: u.completion_tokens ?? 0,
+                totalTokens: u.total_tokens ?? 0,
+                cacheHitTokens: u.prompt_cache_hit_tokens 
+                  ?? u.prompt_tokens_details?.cached_tokens ?? 0,
+                cacheMissTokens: u.prompt_cache_miss_tokens ?? 0,
+                reasoningTokens: u.completion_tokens_details?.reasoning_tokens
+              });
+            }
             
             // 思考型模型的思维链，单独走一条通道，绝不混进正文
             const reasoning = choice?.delta?.reasoning_content;

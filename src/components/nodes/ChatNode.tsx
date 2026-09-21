@@ -17,6 +17,17 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   
   const { models } = useModelStore();
   
+  // ---- 统计信息 ----
+  const usage = node.usage;
+  const answerChars = node.assistantMessage?.length ?? 0;
+  const cacheTotal = usage ? usage.cacheHitTokens + usage.cacheMissTokens : 0;
+  const cacheRate = usage && cacheTotal > 0
+    ? Math.round((usage.cacheHitTokens / cacheTotal) * 100)
+    : null;
+  const tokensPerSecond = usage?.durationMs && usage.completionTokens > 0
+    ? Math.round(usage.completionTokens / (usage.durationMs / 1000))
+    : null;
+  
   const userInputRef = useRef<HTMLTextAreaElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
   
@@ -365,6 +376,31 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         ) : !node.isStreaming ? (
           <div className="text-neutral-400 italic min-h-[160px] text-sm">
             {node.error ? '请点击重试获取AI回复' : 'AI回复将显示在这里'}
+          </div>
+        ) : null}
+
+        {!node.isStreaming && answerChars > 0 ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pt-2 border-t border-neutral-100 text-[11px] text-neutral-400">
+            <span>{answerChars} 字</span>
+            {tokensPerSecond !== null && (
+              <span title="输出速度（含首字延迟）">~{tokensPerSecond} tok/s</span>
+            )}
+            {cacheRate !== null && (
+              <span
+                className={cacheRate >= 50 ? 'text-emerald-600 dark:text-emerald-400' : undefined}
+                title={`命中缓存 ${usage?.cacheHitTokens} tok，未命中 ${usage?.cacheMissTokens} tok`}
+              >
+                缓存 {cacheRate}%
+              </span>
+            )}
+            {usage && (
+              <span title="输入 token · 输出 token">
+                入 {usage.promptTokens} · 出 {usage.completionTokens}
+              </span>
+            )}
+            {usage?.reasoningTokens ? (
+              <span title="思考消耗的 token">思考 {usage.reasoningTokens}</span>
+            ) : null}
           </div>
         ) : null}
       </div>

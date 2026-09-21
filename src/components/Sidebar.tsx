@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { 
   Search, Plus, Settings, Trash2, Edit, X, ChevronLeft,
-  MessageSquare, Library, MoreHorizontal
+  MessageSquare, Library, Sun, Moon
 } from 'lucide-react';
 import { gsap } from 'gsap';
 import { showSuccess, showWarning, showInfo } from '../utils/notification';
+import { useThemeStore } from '../stores/themeStore';
 
 interface SidebarProps {
   onModelManagerClick: () => void;
@@ -26,22 +27,34 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
     filteredSessions
   } = useSessionStore();
 
+  const { theme, toggleTheme } = useThemeStore();
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Animation for sidebar entrance
-    if (sidebarRef.current) {
-      gsap.from(sidebarRef.current, {
-        x: -20,
-        opacity: 0,
-        duration: 0.5,
-        ease: "power2.out"
-      });
-    }
-  }, []);
+    const el = sidebarRef.current;
+    if (!el) return;
+
+    // 用 gsap.from 时必须显式清理：它会“从当前值推到自然值”，
+    // 而 React 18 StrictMode 会双次调用 effect，第二个补间会把第一个补间的
+    // 中间态当成终点，于是侧边栏永久带着一个 -10px 左右的残留偏移
+    // （表现为“边距不对”）。clearProps 负责保证 tween 结束后不留下内联 transform。
+    const tween = gsap.from(el, {
+      x: -20,
+      opacity: 0,
+      duration: 0.5,
+      ease: 'power2.out',
+      clearProps: 'transform,opacity'
+    });
+
+    return () => {
+      tween.kill();
+      gsap.set(el, { clearProps: 'transform,opacity' });
+    };
+  }, [collapsed]);
 
   const handleCreateSession = () => {
     const newSession = {
@@ -210,8 +223,10 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
         </button>
         <button 
           className="flex-1 flex items-center justify-center py-2 text-neutral-600 hover:bg-neutral-50 rounded-md transition-colors"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? '切换到日间模式' : '切换到夜间模式'}
         >
-          <MoreHorizontal size={18} />
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </div>
     </div>

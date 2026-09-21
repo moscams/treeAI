@@ -3,22 +3,25 @@ import typography from '@tailwindcss/typography';
 
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // 极简主义风格的中性色调
+        // 中性色调改为引用 CSS 变量：夜间模式只需换一组变量值，
+        // 全项目的 bg-/text-/border-neutral-* 就会自动跟着变，
+       // 不用在每个组件上写 dark: 前缀。
         neutral: {
-          50: '#fafafa',
-          100: '#f5f5f5',
-          200: '#e5e5e5',
-          300: '#d4d4d4',
-          400: '#a3a3a3',
-          500: '#737373',
-          600: '#525252',
-          700: '#404040',
-          800: '#262626',
-          900: '#171717',
-          950: '#0a0a0a',
+          50: 'rgb(var(--c-neutral-50) / <alpha-value>)',
+          100: 'rgb(var(--c-neutral-100) / <alpha-value>)',
+          200: 'rgb(var(--c-neutral-200) / <alpha-value>)',
+          300: 'rgb(var(--c-neutral-300) / <alpha-value>)',
+          400: 'rgb(var(--c-neutral-400) / <alpha-value>)',
+          500: 'rgb(var(--c-neutral-500) / <alpha-value>)',
+          600: 'rgb(var(--c-neutral-600) / <alpha-value>)',
+          700: 'rgb(var(--c-neutral-700) / <alpha-value>)',
+          800: 'rgb(var(--c-neutral-800) / <alpha-value>)',
+          900: 'rgb(var(--c-neutral-900) / <alpha-value>)',
+          950: 'rgb(var(--c-neutral-950) / <alpha-value>)',
         },
         // 保留一些基础色调用于强调
         accent: {
