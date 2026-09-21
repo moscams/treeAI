@@ -23,6 +23,22 @@ import FileUploadButton from './FileUploadButton';
 import { showSuccess, showError, showInfo } from '../utils/notification';
 import { DEFAULT_SESSION_TITLE, deriveSessionTitle } from '../utils/sessionTitle';
 
+/*
+ * 画布布局常量。
+ *
+ * 宽度必须和 index.css 里 .node-content 的 width（560px）保持一致，
+ * 否则子树宽度会算得比实际窄，兄弟节点互相重叠。
+ * 高度没法预先知道（回答长短不一），420 只是估值 —— 真实尺寸由
+ * collectNodeDimensions 从 React Flow 量到后覆盖。
+ *
+ * 这几个值必须放模块级：建图有两条路径（calculateNodeLayout 和下面那个
+ * 渲染 useEffect），放函数里就没法共用了。
+ */
+const NODE_WIDTH = 560;
+const NODE_HEIGHT = 420;
+const H_GAP = 220;
+const V_GAP = 140;
+
 const nodeTypes = {
   system: SystemNode,
   chat: ChatNode,
@@ -66,17 +82,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const calculateNodeLayout = useCallback((forceRecalculate = false) => {
     if (!session || !session.nodes) return;
   
-    // 必须和 index.css 里 .node-content / .system-node 的宽度保持一致（560px），
-    // 否则子树宽度算得比实际窄，兄弟节点会重叠。
-    const defaultNodeWidth = 560;
-    // 高度无法预先知道（回答长短不一），这是估值；
-    // 真实尺寸由 collectNodeDimensions 量到后覆盖。
-    const defaultNodeHeight = 420;
-    const horizontalSpacing = 220;
-    const verticalSpacing = 140;
-    
     const getNodeDimensions = (nodeId: string) => {
-      return nodeDimensions[nodeId] || { width: defaultNodeWidth, height: defaultNodeHeight };
+      return nodeDimensions[nodeId] || { width: NODE_WIDTH, height: NODE_HEIGHT };
     };
     
     const nodeHeights = new Map<string, number>();
@@ -118,7 +125,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       
       const childrenWidth = children.reduce((total, child, index) => {
         const width = calculateSubtreeWidth(child.id);
-        return total + width + (index < children.length - 1 ? horizontalSpacing : 0);
+        return total + width + (index < children.length - 1 ? H_GAP : 0);
       }, 0);
       
       const subtreeWidth = Math.max(nodeDim.width, childrenWidth);
@@ -139,7 +146,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       
       nodePositions.set(nodeId, { x, y });
       
-      const nextLevelY = y + height + verticalSpacing;
+      const nextLevelY = y + height + V_GAP;
       
       const children = session.nodes.filter(n => n.parentId === nodeId);
       let childStartX = startX;
@@ -147,7 +154,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       children.forEach(child => {
         const childWidth = subtreeWidths.get(child.id) || getNodeDimensions(child.id).width;
         calculateNodePosition(child.id, childStartX, level + 1, nextLevelY);
-        childStartX += childWidth + horizontalSpacing;
+        childStartX += childWidth + H_GAP;
       });
     };
   
@@ -217,27 +224,44 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   }, [session, nodeDimensions, streamingResponses, streamingReasoning, sessionId, updateNodeInSession]);  
 
 
+  /**
+   * 计算新节点的落点。
+   *
+   * 原来写的是 `x: 父节点.x + 兄弟数 * 100, y: 父节点.y + 250`，两个问题：
+   *   1) 节点宽 560px，兄弟之间只错开 100px —— 第二个子节点会压在第一个身上；
+   *   2) 节点最高 760px（见 index.css 的 .node-content），只往下挪 250px，
+   *      连第一个子节点都会和父节点重叠。
+   * 这就是「聊完一轮，新节点位置很奇怪」的成因。
+   *
+   * 现在按实测尺寸算（nodeDimensions 由 React Flow 量到），量不到才退回常量。
+   */
+  const computeChildPosition = useCallback((parentId: string, flowNodes: Node[]) => {
+    const parent = flowNodes.find(n => n.id === parentId);
+    if (!parent) return { x: 0, y: 0 };
+
+    const sizeOf = (id: string) => nodeDimensions[id] || { width: NODE_WIDTH, height: NODE_HEIGHT };
+    const siblings = flowNodes.filter(n => n.data?.node?.parentId === parentId);
+
+    if (siblings.length === 0) {
+      // 独子：水平居中在父节点正下方，垂直方向留出一整段间距
+      const parentSize = sizeOf(parentId);
+      return {
+        x: parent.position.x + (parentSize.width - NODE_WIDTH) / 2,
+        y: parent.position.y + parentSize.height + V_GAP,
+      };
+    }
+
+    // 已有分支：和它们排在同一行，放在最右边那个的右侧
+    const rowY = Math.min(...siblings.map(n => n.position.y));
+    const rightEdge = Math.max(...siblings.map(n => n.position.x + sizeOf(n.id).width));
+    return { x: rightEdge + H_GAP, y: rowY };
+  }, [nodeDimensions]);
+
   const handleAddChildNode = (parentId: string) => {
     if (!session || !defaultModelId) return;
     
     const parentNode = session.nodes.find(n => n.id === parentId);
     if (!parentNode) return;
-
-    // 查找父节点的 ReactFlow 节点，获取其位置
-    const parentFlowNode = nodes.find(n => n.id === parentId);
-    let position = { x: 0, y: 0 };
-    
-    if (parentFlowNode) {
-      // 计算子节点的初始位置：父节点下方偏右
-      const siblingCount = nodes.filter(n => 
-        n.data.node.parentId === parentId
-      ).length;
-      
-      position = {
-        x: parentFlowNode.position.x + siblingCount * 100,
-        y: parentFlowNode.position.y + 250
-      };
-    }
 
     const newNode: ChatNodeType = {
       id: crypto.randomUUID(),
@@ -249,7 +273,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       temperature: parentNode.temperature || 0.7,
       maxTokens: parentNode.maxTokens || 8192,
       createdAt: new Date().toISOString(),
-      position // 保存初始位置
+      position: computeChildPosition(parentId, nodes)
     };
 
     addNodeToSession(sessionId, newNode);
@@ -575,6 +599,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       temperature: systemNode.temperature || 0.7,
       maxTokens: systemNode.maxTokens || 8192,
       createdAt: new Date().toISOString(),
+      // 上传的文件也是个 chat 节点，同样要走落点计算 ——
+      // 不写 position 的话它会因为没有位置而掉到原点，压在系统节点上
+      position: computeChildPosition(systemNode.id, nodes),
     };
 
     addNodeToSession(sessionId, newNode);
@@ -585,9 +612,18 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     if (!session?.nodes) return;
   
     // 创建新的节点数组，确保使用节点保存的位置
+    // 没有保存位置的节点（例如手工改过的导入文件）退回到「父节点正下方」，
+    // 而不是全部堆在原点。只用常量算，位置稳定、不会随渲染跳动。
+    const fallbackPosition = (node: ChatNodeType) => {
+      if (!node.parentId) return { x: 0, y: 0 };
+      const parent = session.nodes.find(n => n.id === node.parentId);
+      const base = parent?.position ?? { x: 0, y: 0 };
+      return { x: base.x, y: base.y + NODE_HEIGHT + V_GAP };
+    };
+
     const reactFlowNodes = session.nodes.map(node => {
-      // 优先使用节点保存的位置，如果没有则使用默认位置
-      const position = node.position || { x: 0, y: 0 };
+      // 优先使用节点保存的位置
+      const position = node.position ?? fallbackPosition(node);
       
       return {
         id: node.id,
