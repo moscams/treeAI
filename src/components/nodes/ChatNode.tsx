@@ -4,6 +4,7 @@ import { MdPreview } from 'md-editor-rt';
 import 'md-editor-rt/lib/preview.css';
 import { Plus, Send, RefreshCcw, Copy, Settings, Trash2, MessageSquare, Brain, ChevronDown } from 'lucide-react';
 import { useModelStore } from '../../stores/modelStore';
+import { useThemeStore } from '../../stores/themeStore';
 import { gsap } from 'gsap';
 import { showSuccess, showInfo, showWarning } from '../../utils/notification';
 import { NodeData } from '../../types';
@@ -16,6 +17,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   
   const { models } = useModelStore();
+  const { theme } = useThemeStore();
   
   // ---- 统计信息 ----
   const usage = node.usage;
@@ -96,24 +98,35 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
     showSuccess('内容已复制到剪贴板');
   };
 
-  // 阻止滚轮事件冒泡，仅在消息区域内滚动
+  // 滚轮处理：
+  //  - 普通滚轮：留在节点内部滚动，不带动画布（stopPropagation）
+  //  - Ctrl/⌘ + 滚轮：交给 React Flow 缩放画布。
+  //    React Flow 把 ctrlKey+wheel 当作触控板捏合手势（zoomOnPinch，默认开），
+  //    但它的监听挂在画布元素的冒泡阶段，我们必须放行才能让它收到；
+  //    同时 preventDefault 阻止浏览器把 Ctrl+滚轮当成「整页缩放」。
   const handleWheel = useCallback((e: WheelEvent) => {
-    // 检查事件是否发生在节点容器内
-    if (nodeRef.current && nodeRef.current.contains(e.target as Node)) {
-      e.stopPropagation();
+    if (!nodeRef.current || !nodeRef.current.contains(e.target as Node)) return;
+
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      return;
     }
+
+    e.stopPropagation();
   }, []);
 
   useEffect(() => {
-    // 使用捕获阶段监听滚轮事件
+    // capture 阶段：保证在节点内任何子元素之前处理。
+    // passive: false 是必须的，否则浏览器会忽略 preventDefault。
     const node = nodeRef.current;
+    const opts = { capture: true, passive: false } as const;
     if (node) {
-      node.addEventListener('wheel', handleWheel, { capture: true });
+      node.addEventListener('wheel', handleWheel, opts);
     }
 
     return () => {
       if (node) {
-        node.removeEventListener('wheel', handleWheel, { capture: true });
+        node.removeEventListener('wheel', handleWheel, opts);
       }
     };
   }, [handleWheel]);
@@ -341,6 +354,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
               <MdPreview 
                 editorId={`preview-${node.id}`}
                 modelValue={streamingResponse}
+                theme={theme}
                 className="md-preview overflow-auto break-words"
                 style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
                 previewTheme="vuepress"
@@ -358,6 +372,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
               <MdPreview 
                 editorId={`preview-${node.id}`}
                 modelValue={node.assistantMessage}
+                theme={theme}
                 className="md-preview overflow-auto break-words"
                 style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
                 previewTheme="vuepress"

@@ -40,16 +40,20 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const [edges, setEdges] = useState<Edge[]>([]);
   const reactFlowInstance = useReactFlow();
   const abortControllerRef = useRef<Record<string, AbortController>>({});
-  const [nodeDimensions] = useState<Record<string, { width: number, height: number }>>({});
+  const [nodeDimensions, setNodeDimensions] = useState<Record<string, { width: number, height: number }>>({});
   const [streamingResponses, setStreamingResponses] = useState<Record<string, string>>({});
 
   const calculateNodeLayout = useCallback((forceRecalculate = false) => {
     if (!session || !session.nodes) return;
   
-    const defaultNodeWidth = 350;
-    const defaultNodeHeight = 250;
-    const horizontalSpacing = 200;
-    const verticalSpacing = 100;
+    // 必须和 index.css 里 .node-content / .system-node 的宽度保持一致（560px），
+    // 否则子树宽度算得比实际窄，兄弟节点会重叠。
+    const defaultNodeWidth = 560;
+    // 高度无法预先知道（回答长短不一），这是估值；
+    // 真实尺寸由 collectNodeDimensions 量到后覆盖。
+    const defaultNodeHeight = 420;
+    const horizontalSpacing = 220;
+    const verticalSpacing = 140;
     
     const getNodeDimensions = (nodeId: string) => {
       return nodeDimensions[nodeId] || { width: defaultNodeWidth, height: defaultNodeHeight };
@@ -441,12 +445,32 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     }
   };
 
+  // React Flow 量到节点真实尺寸后会派发 dimensions 变更。
+  // 记下来：「重新排布」时用它算真实的子树宽度/行高，比猜的常量准得多。
+  const collectNodeDimensions = useCallback((changes: NodeChange[]) => {
+    setNodeDimensions(prev => {
+      let next: typeof prev | null = null;
+      for (const change of changes) {
+        if (change.type !== 'dimensions' || !change.dimensions) continue;
+        const { width, height } = change.dimensions;
+        if (width <= 0 || height <= 0) continue;
+        const old = prev[change.id];
+        if (old && old.width === width && old.height === height) continue;
+        next = next || { ...prev };
+        next[change.id] = { width, height };
+      }
+      // 没有新信息就返回原引用，避免多余重渲染
+      return next || prev;
+    });
+  }, []);
+
   const handleReorganizeLayout = useCallback(() => {
-    console.log("reorganize layout")
-    calculateNodeLayout();
+    // 必须传 true —— 否则 calculateNodeLayout 看到节点已有 position 就原样保留，
+    // 这个按钮实际上只做了 fitView，根本没有重排。
+    calculateNodeLayout(true);
     setTimeout(() => {
       reactFlowInstance.fitView({ padding: 0.2 });
-    }, 50);
+    }, 150);
   }, [calculateNodeLayout, reactFlowInstance]);
 
   useEffect(() => {
@@ -575,7 +599,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
           type: 'smoothstep',
           style: { stroke: '#a3a3a3', strokeWidth: 1.5 }
         }}
-        onNodesChange={(changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds))}
+        onNodesChange={(changes: NodeChange[]) => {
+          setNodes(nds => applyNodeChanges(changes, nds));
+          collectNodeDimensions(changes);
+        }}
         onNodeDragStop={(event, node) => {
           // 节点拖动结束后保存位置
           if (!session) return;

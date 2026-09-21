@@ -56,7 +56,7 @@ body {
 
 .system-node {
   @apply bg-white;
-  min-width: 400px;
+  min-width: 560px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(226, 232, 240, 0.8);
 }
@@ -71,7 +71,7 @@ body {
   background: linear-gradient(to bottom, #fafafa, #f5f5f5);
   border: 1px solid rgba(229, 229, 229, 0.7);
   overflow-y: auto;
-  max-height: 400px;
+  max-height: 520px;
   scroll-behavior: smooth;
 }
 
@@ -99,11 +99,14 @@ body {
 }
 
 .node-content {
-  min-width: 400px;
-  max-width: 500px;
-  max-height: 600px;
+  /* 固定宽度：ChatFlow.tsx 的树形布局是按固定宽度算子树宽度的，
+     节点宽度不固定会让兄弟节点重叠。改这里必须同步改
+     calculateNodeLayout() 里的 defaultNodeWidth。 */
+  width: 560px;
+  min-width: 560px;
+  max-width: 560px;
+  max-height: 760px;
   scroll-behavior: smooth;
-  width: 100%;
   overflow-wrap: break-word;
   word-break: break-word;
   overflow: hidden;
@@ -390,9 +393,26 @@ html.dark .react-flow__controls-button svg {
   fill: #d4d4d4;
 }
 
-/* Markdown 预览：prose 默认是浅色排版，夜间反色 */
+/* Markdown 预览：prose 默认是浅色排版，夜间必须把字号变量也换掉。
+   注意：MdPreview 还另外收了 theme={theme}，那是管 code/表格等
+   md-editor 自己的 --md-theme-* 变量，两者缺一不可。 */
 html.dark .md-preview {
-  @apply prose-invert;
+  --tw-prose-body: #d4d4d4;
+  --tw-prose-headings: #f5f5f5;
+  --tw-prose-lead: #a3a3a3;
+  --tw-prose-links: #7dd3fc;
+  --tw-prose-bold: #f5f5f5;
+  --tw-prose-counters: #a3a3a3;
+  --tw-prose-bullets: #525252;
+  --tw-prose-hr: #2e2e2e;
+  --tw-prose-quotes: #e5e5e5;
+  --tw-prose-quote-borders: #3d3d3d;
+  --tw-prose-captions: #a3a3a3;
+  --tw-prose-code: #f5f5f5;
+  --tw-prose-pre-code: #e5e5e5;
+  --tw-prose-pre-bg: #1a1a1a;
+  --tw-prose-th-borders: #3d3d3d;
+  --tw-prose-td-borders: #2e2e2e;
 }
 
 html.dark ::-webkit-scrollbar-thumb {

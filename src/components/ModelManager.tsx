@@ -40,12 +40,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onClose }) => {
   const handleAddModel = () => {
     const newModel: Model = {
       id: crypto.randomUUID(),
-      name: 'New Model',
-      baseUrl: 'https://api.openai.com/v1',
+      // 预填 DeepSeek：用户只需要粘贴 API Key 就能用。
+      // reasoningEffort 故意不设 —— 留空时 resolveReasoningEffort() 会按 baseUrl
+      // 自动判定为 low；如果写死成 low，以后把 baseUrl 换成 OpenAI 就会多发一个
+      // 它不认识的 reasoning_effort 参数。
+      name: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com',
       apiKey: '',
-      modelName: 'gpt-4',
+      modelName: 'deepseek-v4-pro',
       defaultSystemPrompt: 'You are a helpful assistant.',
-      maxTokens: 8192,
+      maxTokens: 32768,
       temperature: 0.7
     };
     

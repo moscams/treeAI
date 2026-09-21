@@ -136,5 +136,9 @@ function escapeXml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replace(/'/g, '&apos;')
+    // 换行要写成字符引用：XML 会把属性值里的字面换行规范化成空格，
+    // 那样 FreeMind/Freeplane 里每条就挤成一行了。
+    // 必须放在最后 —— 放在 & 转义之前的话，&#10; 会被自己转成 &amp;#10;。
+    .replace(/\r\n|\r|\n/g, '&#10;');
 }
