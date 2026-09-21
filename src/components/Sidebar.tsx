@@ -7,6 +7,7 @@ import {
 import { gsap } from 'gsap';
 import { showSuccess, showWarning, showInfo } from '../utils/notification';
 import { useThemeStore } from '../stores/themeStore';
+import { DEFAULT_SESSION_TITLE } from '../utils/sessionTitle';
 
 interface SidebarProps {
   onModelManagerClick: () => void;
@@ -59,7 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
   const handleCreateSession = () => {
     const newSession = {
       id: crypto.randomUUID(),
-      title: "New Conversation",
+      title: DEFAULT_SESSION_TITLE,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       nodes: []

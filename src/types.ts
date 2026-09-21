@@ -71,6 +71,8 @@ export interface Position {
 export interface NodeData {
   node: ChatNode;
   streamingResponse?: string | null;
+  /** 流式期间的思维链（正文之前到达，且有独立的 SSE 通道） */
+  streamingReasoning?: string | null;
   onAddChild: (parentId: string) => void;
   onEdit: (nodeId: string, content: string, type: 'user' | 'assistant' | 'system') => void;
   onDelete: (nodeId: string) => void;

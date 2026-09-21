@@ -10,7 +10,7 @@ import { showSuccess, showInfo, showWarning } from '../../utils/notification';
 import { NodeData } from '../../types';
 
 const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
-  const { node, streamingResponse, onEdit, onAddChild, onDelete, onRetry, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
+  const { node, streamingResponse, streamingReasoning, onEdit, onAddChild, onDelete, onRetry, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
   const [userMessage, setUserMessage] = useState(node.userMessage || '');
   const [isEditingUser, setIsEditingUser] = useState(!node.userMessage);
   const [showSettings, setShowSettings] = useState(false);
@@ -29,6 +29,20 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   const tokensPerSecond = usage?.durationMs && usage.completionTokens > 0
     ? Math.round(usage.completionTokens / (usage.durationMs / 1000))
     : null;
+
+  // 流式期间优先显示实时思维链；流完之后节点上持久化的值接管。
+  const reasoningText = streamingReasoning || node.reasoning || '';
+  const isLiveReasoning = !!streamingReasoning && !!node.isStreaming;
+
+  // 思维链一产生就自动展开，否则「流式显示」等于没显示。
+  // 用 ref 保证每个节点只自动展开一次，之后尊重用户的折叠操作。
+  const autoExpandedReasoning = useRef(false);
+  useEffect(() => {
+    if (isLiveReasoning && !autoExpandedReasoning.current) {
+      autoExpandedReasoning.current = true;
+      setShowReasoning(true);
+    }
+  }, [isLiveReasoning]);
   
   const userInputRef = useRef<HTMLTextAreaElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -142,7 +156,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         className="!bg-neutral-400 !border-white"
       />
 
-      <div className="flex justify-between items-center p-2 text-neutral-700 border-b border-neutral-100">
+      <div className="flex justify-between items-center p-2 text-neutral-700 border-b border-neutral-100 shrink-0">
         <div className="flex items-center">
           <MessageSquare size={14} className="mr-1.5 text-neutral-500" />
           <span className="text-xs font-medium">对话节点</span>
@@ -170,7 +184,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       </div>
 
       {showSettings && (
-        <div className="p-3 bg-neutral-50 border-b border-neutral-100">
+        <div className="p-3 bg-neutral-50 border-b border-neutral-100 shrink-0">
           <div className="mb-3">
             <label className="block text-xs font-medium text-neutral-700 mb-1">
               模型
@@ -237,7 +251,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       )}
 
       <div 
-        className="p-3 border-b border-neutral-100"
+        className="p-3 border-b border-neutral-100 shrink-0"
         onWheel={(e) => {
           e.stopPropagation();
         }}
@@ -257,7 +271,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
                   showInfo('消息已保存');
                 }
               }}
-              className="w-full p-2.5 border border-neutral-200 rounded-md focus:outline-none focus:ring-1 focus:ring-neutral-400 text-sm"
+              className="w-full p-2.5 border border-neutral-200 rounded-md focus:outline-none focus:ring-1 focus:ring-neutral-400 text-[17px] leading-relaxed"
               placeholder="在此输入您的消息..."
               onKeyDown={handleKeyDown}
               rows={3}
@@ -279,7 +293,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         ) : (
           <div className="relative group">
             <div 
-              className="pr-8 max-h-[200px] min-h-[80px]"
+              className="pr-8 max-h-[200px] min-h-[80px] overflow-auto text-[19px] leading-relaxed whitespace-pre-wrap"
               onClick={() => setIsEditingUser(true)}
             >
               {node.userMessage || <span className="text-gray-400 italic">Click to add message...</span>}
@@ -316,8 +330,8 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
           </div>
         ) : null}
 
-        {node.reasoning ? (
-          <div className="mb-2 border border-neutral-100 rounded-md overflow-hidden">
+        {reasoningText ? (
+          <div className="mb-2 border border-neutral-100 rounded-md overflow-hidden shrink-0">
             <button
               type="button"
               onClick={() => setShowReasoning(v => !v)}
@@ -325,7 +339,10 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             >
               <span className="flex items-center">
                 <Brain size={12} className="mr-1.5" />
-                思考过程 · {node.reasoning.length} 字
+                思考过程 · {reasoningText.length} 字
+                {isLiveReasoning && (
+                  <span className="ml-1.5 animate-pulse text-neutral-400">思考中…</span>
+                )}
               </span>
               <ChevronDown
                 size={12}
@@ -337,7 +354,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
                 className="m-0 px-2.5 py-2 text-xs leading-relaxed text-neutral-500 whitespace-pre-wrap break-words max-h-[240px] overflow-auto border-t border-neutral-100 bg-neutral-50/50 font-sans"
                 onWheel={(e) => e.stopPropagation()}
               >
-                {node.reasoning}
+                {reasoningText}
               </pre>
             )}
           </div>
@@ -420,7 +437,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         ) : null}
       </div>
 
-      <div className="flex justify-between items-center border-t border-neutral-100 p-2">
+      <div className="flex justify-between items-center border-t border-neutral-100 p-2 shrink-0">
         <div className="flex space-x-2">
           <button 
             onClick={() => handleCopyToClipboard(node.assistantMessage)}

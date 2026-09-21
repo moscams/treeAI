@@ -21,6 +21,7 @@ import { Share2, LayoutGrid, FileUp } from 'lucide-react';
 import { exportToMindmap } from '../utils/exportUtils';
 import FileUploadButton from './FileUploadButton';
 import { showSuccess, showError } from '../utils/notification';
+import { DEFAULT_SESSION_TITLE, deriveSessionTitle } from '../utils/sessionTitle';
 
 const nodeTypes = {
   system: SystemNode,
@@ -32,7 +33,7 @@ interface ChatFlowProps {
 }
 
 const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
-  const { sessions, addNodeToSession, updateNodeInSession, deleteNodeFromSession } = useSessionStore();
+  const { sessions, addNodeToSession, updateNodeInSession, deleteNodeFromSession, updateSession } = useSessionStore();
   const { models, defaultModelId } = useModelStore();
   const { theme } = useThemeStore();
   const session = sessions.find(s => s.id === sessionId);
@@ -42,6 +43,25 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const abortControllerRef = useRef<Record<string, AbortController>>({});
   const [nodeDimensions, setNodeDimensions] = useState<Record<string, { width: number, height: number }>>({});
   const [streamingResponses, setStreamingResponses] = useState<Record<string, string>>({});
+  // 思维链单独一个 map。它以独立通道（delta.reasoning_content）到达，
+  // 而且整段都在正文之前，所以不会和正文的更新叠加成「每 chunk 两次重渲染」。
+  const [streamingReasoning, setStreamingReasoning] = useState<Record<string, string>>({});
+
+  // 流式状态清理：正文和思维链一起清，否则重试后会残留上一次的内容
+  const clearStreamingState = useCallback((nodeId: string) => {
+    setStreamingResponses(prev => {
+      if (!(nodeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[nodeId];
+      return next;
+    });
+    setStreamingReasoning(prev => {
+      if (!(nodeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[nodeId];
+      return next;
+    });
+  }, []);
 
   const calculateNodeLayout = useCallback((forceRecalculate = false) => {
     if (!session || !session.nodes) return;
@@ -161,6 +181,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         data: { 
           node,
           streamingResponse: streamingResponses[node.id] || null,
+          streamingReasoning: streamingReasoning[node.id] || null,
           onAddChild: handleAddChildNode,
           onEdit: handleEditNode,
           onDelete: handleDeleteNode,
@@ -193,7 +214,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   
   // The handlers below intentionally read the latest session state from this render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, nodeDimensions, streamingResponses, sessionId, updateNodeInSession]);  
+  }, [session, nodeDimensions, streamingResponses, streamingReasoning, sessionId, updateNodeInSession]);  
 
 
   const handleAddChildNode = (parentId: string) => {
@@ -293,6 +314,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       ...prev,
       [nodeId]: ""
     }));
+    setStreamingReasoning(prev => ({
+      ...prev,
+      [nodeId]: ""
+    }));
     
     // 本次请求累积的正文与思维链
     let accumulatedResponse = '';
@@ -330,6 +355,15 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       });
       
       messages.push({ role: 'user' as const, content: node.userMessage });
+
+      // 会话标题还是默认值时，用第一个问题自动命名。纯本地字符串处理，
+      // 不额外请求 API。用户在侧边栏改过标题后这里就不再介入。
+      if (session.title === DEFAULT_SESSION_TITLE) {
+        const derivedTitle = deriveSessionTitle(node.userMessage);
+        if (derivedTitle) {
+          updateSession({ ...session, title: derivedTitle });
+        }
+      }
       
       await sendChatRequest({
         messages,
@@ -348,6 +382,11 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         // 思维链单独累积，不参与正文渲染，也不会回传给 API
         onReasoning: (chunk) => {
           accumulatedReasoning += chunk;
+          // 同步喂给流式状态，让节点在等待正文时就能看到思考过程
+          setStreamingReasoning(prev => ({
+            ...prev,
+            [nodeId]: accumulatedReasoning
+          }));
         },
         onUsage: (u) => {
           accumulatedUsage = u;
@@ -365,12 +404,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         isStreaming: false
       });
       
-      // 清除流式状态
-      setStreamingResponses(prev => {
-        const newState = {...prev};
-        delete newState[nodeId];
-        return newState;
-      });
+      // 清除流式状态（正文 + 思维链）。此时节点已经拿到持久化的
+      // reasoning，继续流式渲染反而会和落库版本重复。
+      clearStreamingState(nodeId);
       
     } catch (error: unknown) {
       console.error('Chat request failed:', error);
@@ -388,11 +424,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       });
       
       // 清除流式状态
-      setStreamingResponses(prev => {
-        const newState = {...prev};
-        delete newState[nodeId];
-        return newState;
-      });
+      clearStreamingState(nodeId);
     } finally {
       delete abortControllerRef.current[nodeId];
     }
@@ -528,6 +560,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         data: { 
           node,
           streamingResponse: streamingResponses[node.id] || null,
+          streamingReasoning: streamingReasoning[node.id] || null,
           onAddChild: handleAddChildNode,
           onEdit: handleEditNode,
           onDelete: handleDeleteNode,
@@ -555,7 +588,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
 
   // Keep node callbacks bound to the current render without rebuilding this effect recursively.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.nodes, sessionId, streamingResponses]); // 添加 sessionId 到依赖数组
+  }, [session?.nodes, sessionId, streamingResponses, streamingReasoning]); // 添加 sessionId 到依赖数组
   
 
   if (!session) {

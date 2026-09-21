@@ -54,13 +54,6 @@ body {
   overflow: hidden;
 }
 
-.system-node {
-  @apply bg-white;
-  min-width: 560px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-}
-
 .user-message {
   background: linear-gradient(to bottom, #ffffff, #f9fafb);
   border: 1px solid rgba(226, 232, 240, 0.8);
@@ -73,6 +66,10 @@ body {
   overflow-y: auto;
   max-height: 520px;
   scroll-behavior: smooth;
+  /* 节点内容是纵向 flex（见 .node-content），这里作为可收缩的区域：
+     内容超高时优先由它自身滚动，而不是把底部工具栏挤出去。 */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .react-flow__node {
@@ -99,6 +96,12 @@ body {
 }
 
 .node-content {
+  /* 纵向 flex：头部 / 设置面板 / 输入区 / 底部工具栏都 shrink-0，
+     中间的内容区（.assistant-message 等）负责收缩并自身滚动。
+     不做这一步的话，长回答会把底部功能区顶出 max-height，
+     再被 overflow: hidden 裁掉 —— 表现就是「这个节点看不到最下面那条工具栏」。 */
+  display: flex;
+  flex-direction: column;
   /* 固定宽度：ChatFlow.tsx 的树形布局是按固定宽度算子树宽度的，
      节点宽度不固定会让兄弟节点重叠。改这里必须同步改
      calculateNodeLayout() 里的 defaultNodeWidth。 */
@@ -181,6 +184,17 @@ body {
   word-break: break-word;
   max-width: 100%;
 }
+
+/* 回答里的标题：md-editor 的 vuepress 主题给 h1 设了 2.2em（约 35px），
+   Tailwind prose 也是 2.25em，塞在 560px 宽的节点里显得非常大。
+   注意 md-editor 的选择器是 `div.vuepress-theme h1`（特异度 0,1,2），
+   高于 `.md-preview h1`（0,1,1），所以这里必须用 !important 才压得住。 */
+.md-preview h1 { font-size: 1.4em !important; }
+.md-preview h2 { font-size: 1.25em !important; }
+.md-preview h3 { font-size: 1.1em !important; }
+.md-preview h4,
+.md-preview h5,
+.md-preview h6 { font-size: 1em !important; }
 
 .md-preview table {
   display: block;
@@ -305,12 +319,6 @@ html.dark .text-white {
 
 html.dark .border-white {
   border-color: rgb(var(--c-neutral-300));
-}
-
-/* @apply bg-white 会把 white 内联进类定义，拿不到 .bg-white 的覆盖，得单独写 */
-html.dark .system-node {
-  background-color: rgb(var(--c-neutral-100));
-  border-color: rgba(255, 255, 255, 0.08);
 }
 
 html.dark .sidebar {

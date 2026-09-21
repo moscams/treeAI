@@ -71,7 +71,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       ref={nodeRef}
       className={`node-content bg-white rounded-lg overflow-hidden border border-neutral-200 shadow-minimal ${nodeHeight}`}
     >
-      <div className="flex justify-between items-center p-2 text-neutral-700 border-b border-neutral-100">
+      <div className="flex justify-between items-center p-2 text-neutral-700 border-b border-neutral-100 shrink-0">
         <div className="flex items-center">
           <Settings size={14} className="mr-1.5 text-neutral-500" />
           <span className="text-xs font-medium">系统提示词</span>
@@ -143,7 +143,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         </div>
       )}
 
-      <div className="p-3">
+      <div className="p-3 flex-1 min-h-0 overflow-y-auto">
         {isEditing ? (
           <textarea
             ref={textareaRef}
@@ -169,7 +169,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         )}
       </div>
 
-      <div className="p-2 flex justify-end space-x-2 border-t border-neutral-100">
+      <div className="p-2 flex justify-end space-x-2 border-t border-neutral-100 shrink-0">
         <button 
           className="flex items-center justify-center p-1.5 bg-neutral-900 text-white rounded-full hover:bg-neutral-800 transition-colors"
           onClick={() => onAddChild(node.id)}
