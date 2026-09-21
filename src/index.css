@@ -88,6 +88,52 @@ body {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
 }
 
+/*
+ * 统一光标，消掉流式输出时的光标抖动。
+ *
+ * React Flow 给 .react-flow__pane / .react-flow__viewport 设了 cursor: grab，
+ * 而节点内部是默认光标。生成文本时 Markdown 预览的 DOM 会被反复重建
+ * （md-editor 先写一遍 HTML，再在 effect 里跑高亮/公式补处理），鼠标底下的元素
+ * 一直在换 —— 落在节点里是箭头、一瞬间落到画布上就变成手，看起来就是光标在
+ * 「手」和「箭头」之间疯狂跳动。
+ *
+ * 两边统一成同一个值以后，不管底下换成谁都算出同一个结果，抖动就没有了。
+ * 节点本身可拖拽，内圈用 grab 比箭头更能说明“这张卡片可以拖”。
+ */
+.react-flow__pane,
+.react-flow__viewport,
+.react-flow__node,
+.react-flow__node * {
+  cursor: grab;
+}
+
+/*
+ * 真正可点的东西还是得给 pointer 反馈。
+ *
+ * .react-flow__node .cursor-pointer 的特异性（0,2,0）高于上面那条（0,1,0），
+ * 所以组件里显式写上 cursor-pointer 的元素不会被盖掉（SystemNode 里那块
+ * 「点击添加系统提示词」就是这种 div）。
+ */
+.react-flow__node button,
+.react-flow__node a,
+.react-flow__node select,
+.react-flow__node summary,
+.react-flow__node .cursor-pointer,
+.react-flow__node [role='button'] {
+  cursor: pointer;
+}
+
+/* 输入框给文字光标 */
+.react-flow__node textarea,
+.react-flow__node input {
+  cursor: text;
+}
+
+/* 连接点是可拖的，十字准星比 grab 更贴切 */
+.react-flow__node .react-flow__handle {
+  cursor: crosshair;
+}
+
 .react-flow__handle {
   background: #a3a3a3;
   border: 2px solid white;
