@@ -81,6 +81,11 @@ export interface NodeData {
   onTemperatureChange: (nodeId: string, temperature: number) => void;
   onMaxTokensChange: (nodeId: string, maxTokens: number) => void;
   isRoot?: boolean;
+  /**
+   * 这个节点是刚创建的，输入框应该自动取得焦点，用户直接打字就行。
+   * 只在新建时置 true，所以不会在重渲染时反复抢焦点。
+   */
+  autoFocus?: boolean;
 }
 
 export interface ModelResponse {

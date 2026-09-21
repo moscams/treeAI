@@ -10,7 +10,7 @@ import { showSuccess, showInfo, showWarning } from '../../utils/notification';
 import { NodeData } from '../../types';
 
 const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
-  const { node, streamingResponse, streamingReasoning, onEdit, onAddChild, onDelete, onRetry, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
+  const { node, streamingResponse, streamingReasoning, autoFocus, onEdit, onAddChild, onDelete, onRetry, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
   const [userMessage, setUserMessage] = useState(node.userMessage || '');
   const [isEditingUser, setIsEditingUser] = useState(!node.userMessage);
   const [showSettings, setShowSettings] = useState(false);
@@ -74,6 +74,37 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       );
     }
   }, [isEditingUser]);
+
+  /*
+   * 新建节点后直接把光标放进输入框，不需要用户再点一下。
+   *
+   * 上面那个 effect 在挂载时其实已经 focus 过了，但 React Flow 会把每个节点包装成
+   * 可聚焦元素（tabIndex=0）用来支持键盘操作，它的聚焦可能发生在我们之后，
+   * 把光标抢走。所以过一会检查一次并补回。
+   * 用 latch 保证只补一次，并且如果用户已经在别处输入就不抢。
+   */
+  const autoFocusHandled = useRef(false);
+  useEffect(() => {
+    if (!autoFocus || autoFocusHandled.current) return;
+    autoFocusHandled.current = true;
+
+    const focusInput = () => {
+      const el = userInputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    };
+
+    focusInput();
+    const timer = setTimeout(() => {
+      const active = document.activeElement;
+      // 用户已经在别的输入框里打字了，就别把焦点抢回来
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      focusInput();
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [autoFocus]);
 
   const handleSubmitUserMessage = () => {
     if (!userMessage.trim()) return;

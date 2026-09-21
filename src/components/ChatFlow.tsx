@@ -265,7 +265,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         node,
         streamingResponse: streamingResponses[node.id] || null,
         streamingReasoning: streamingReasoning[node.id] || null,
-        isRoot: node.type === 'system'
+        isRoot: node.type === 'system',
+        autoFocus: pendingFocusId === node.id
       }, nodeCacheRef.current.get(node.id));
     });
 
@@ -721,6 +722,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       const position = resolveNodePosition(node, session.nodes);
       const liveResponse = streamingResponses[node.id] || null;
       const liveReasoning = streamingReasoning[node.id] || null;
+      const autoFocus = pendingFocusId === node.id;
       const previous = previousNodes.get(node.id);
 
       // 完全没变就复用同一个对象引用 —— React Flow 会跳过这个节点的重渲染。
@@ -730,6 +732,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         previous.data.node === node &&
         previous.data.streamingResponse === liveResponse &&
         previous.data.streamingReasoning === liveReasoning &&
+        previous.data.autoFocus === autoFocus &&
         previous.position.x === position.x &&
         previous.position.y === position.y
       ) {
@@ -742,7 +745,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         node,
         streamingResponse: liveResponse,
         streamingReasoning: liveReasoning,
-        isRoot: node.type === 'system'
+        isRoot: node.type === 'system',
+        autoFocus
       }, previous);
       nextCache.set(node.id, next);
       return next;
@@ -753,8 +757,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     commitEdges(buildFlowEdges(session.nodes));
 
   // Keep node callbacks bound to the current render without rebuilding this effect recursively.
+  // pendingFocusId 也要进依赖：清掉它时得把 autoFocus 重新算成 false，
+  // 否则节点上会一直挂着 autoFocus: true。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.nodes, sessionId, streamingResponses, streamingReasoning]); // 添加 sessionId 到依赖数组
+  }, [session?.nodes, sessionId, streamingResponses, streamingReasoning, pendingFocusId]); // 添加 sessionId 到依赖数组
 
   // 新建的节点可能落在视口外面（分支一多就往右排），所以渲染完成后把它平移到视野中间。
   //
