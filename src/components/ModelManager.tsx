@@ -162,12 +162,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onClose }) => {
                   <label className="block text-xs font-medium text-neutral-700 mb-1">
                     API 地址
                   </label>
+                  {/* 用 type="text" 而不是 type="url"：url 会让浏览器在提交时做格式校验，
+                      不合格就静默拦住 form submit（只弹一个不起眼的提示），
+                      表现为「点了保存没反应」。宁可让它存进去、请求时再报错。 */}
                   <input
-                    type="url"
+                    type="text"
+                    inputMode="url"
                     value={editingModel.baseUrl}
                     onChange={(e) => setEditingModel({ ...editingModel, baseUrl: e.target.value })}
                     className="w-full p-2 border border-neutral-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400"
-                    placeholder="https://api.openai.com/v1"
+                    placeholder="https://api.deepseek.com"
                     required
                   />
                 </div>
@@ -218,13 +222,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onClose }) => {
                 
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1">
-                    默认系统提示词
+                    默认系统提示词 <span className="text-neutral-400 font-normal">（可留空）</span>
                   </label>
                   <textarea
                     value={editingModel.defaultSystemPrompt}
                     onChange={(e) => setEditingModel({ ...editingModel, defaultSystemPrompt: e.target.value })}
                     className="w-full p-2 border border-neutral-200 rounded-md h-32 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400"
-                    required
+                    placeholder="留空则不发送 system 消息 —— 这是合法请求，大多数模型不带系统提示词也能正常对话"
                   />
                 </div>
                 

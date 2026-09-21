@@ -192,11 +192,8 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             <select
               value={node.modelId || ''}
               onChange={(e) => {
+                // 提示由 ChatFlow 统一发出 —— 只有它知道系统提示词有没有被一并替换
                 onModelChange(node.id, e.target.value);
-                const selectedModel = models.find(m => m.id === e.target.value);
-                if (selectedModel) {
-                  showInfo(`已切换到模型: ${selectedModel.name}`);
-                }
               }}
               className="w-full p-1.5 text-xs border border-neutral-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-neutral-400"
             >
@@ -372,6 +369,10 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
                 editorId={`preview-${node.id}`}
                 modelValue={streamingResponse}
                 theme={theme}
+                // mermaid 从 CDN 加载的体积高达 743KB（gzip），而且是不管内容里
+                // 有没有图都会加载。关掉后 mermaid 代码块会降级成普通代码块。
+                // 想要的话：本地打包 mermaid，删掉这行，再仿照 katex 加一套 shim。
+                noMermaid
                 className="md-preview overflow-auto break-words"
                 style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
                 previewTheme="vuepress"
@@ -390,6 +391,8 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
                 editorId={`preview-${node.id}`}
                 modelValue={node.assistantMessage}
                 theme={theme}
+                // 同上面那处：mermaid 太重，关掉（降级为普通代码块）
+                noMermaid
                 className="md-preview overflow-auto break-words"
                 style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
                 previewTheme="vuepress"

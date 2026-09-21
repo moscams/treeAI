@@ -20,7 +20,7 @@ import { sendChatRequest } from '../services/apiService';
 import { Share2, LayoutGrid, FileUp } from 'lucide-react';
 import { exportToMindmap } from '../utils/exportUtils';
 import FileUploadButton from './FileUploadButton';
-import { showSuccess, showError } from '../utils/notification';
+import { showSuccess, showError, showInfo } from '../utils/notification';
 import { DEFAULT_SESSION_TITLE, deriveSessionTitle } from '../utils/sessionTitle';
 
 const nodeTypes = {
@@ -291,7 +291,12 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     if (!node) return;
     
     const model = models.find(m => m.id === node.modelId);
-    if (!model) return;
+    if (!model) {
+      // 以前这里是静默 return —— 点了「重新生成」什么都不发生，也没任何提示。
+      // 导入的备份最容易撞上：文件里的模型没一起导入时 modelId 是悬空的。
+      showError('该节点引用的模型不存在，请在节点设置里重新选一个模型');
+      return;
+    }
     
     if (abortControllerRef.current[nodeId]) {
       abortControllerRef.current[nodeId].abort();
@@ -436,10 +441,38 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     const node = session.nodes.find(n => n.id === nodeId);
     if (!node) return;
     
+    const nextModel = models.find(m => m.id === modelId);
+    if (!nextModel) return;
+    
+    // system 节点的正文就是系统提示词，默认取的是「首次创建时那个模型」的
+    // defaultSystemPrompt。所以换模型时，如果用户没动过这段提示词，就跟着换；
+    // 一旦用户改过，就绝不覆盖 —— 那是他自己写的内容。
+    let userMessage = node.userMessage;
+    let promptReplaced = false;
+    if (node.type === 'system') {
+      const previousModel = models.find(m => m.id === node.modelId);
+      const isUntouched = previousModel
+        ? node.userMessage === previousModel.defaultSystemPrompt
+        : node.userMessage.trim() === '';
+      
+      if (isUntouched && nextModel.defaultSystemPrompt !== node.userMessage) {
+        userMessage = nextModel.defaultSystemPrompt;
+        promptReplaced = true;
+      }
+    }
+    
     updateNodeInSession(sessionId, {
       ...node,
-      modelId
+      modelId,
+      userMessage
     });
+    
+    // 提示统一从这里发：只有这里才知道系统提示词有没有被一并替换
+    showInfo(
+      promptReplaced
+        ? `已切换到 ${nextModel.name}，系统提示词一并更新`
+        : `已切换到模型: ${nextModel.name}`
+    );
   };
 
   const handleTemperatureChange = (nodeId: string, temperature: number) => {
@@ -507,21 +540,24 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
 
   useEffect(() => {
     if (session && session.nodes.length === 0 && models.length > 0) {
+      // 用当前选中的默认模型，而不是模型列表里的第一个。
+      // （defaultModelId 别处都在用，就这里漏了。）
+      const initialModel = models.find(m => m.id === defaultModelId) ?? models[0];
       const systemNode: ChatNodeType = {
         id: crypto.randomUUID(),
         parentId: null,
         type: 'system',
-        userMessage: models[0].defaultSystemPrompt,
+        userMessage: initialModel.defaultSystemPrompt,
         assistantMessage: "",
-        modelId: models[0].id,
-        temperature: models[0].temperature ?? 0.7,
-        maxTokens: models[0].maxTokens || 8192,
+        modelId: initialModel.id,
+        temperature: initialModel.temperature ?? 0.7,
+        maxTokens: initialModel.maxTokens || 8192,
         createdAt: new Date().toISOString(),
       };
       
       addNodeToSession(sessionId, systemNode);
     }
-  }, [session, sessionId, models, addNodeToSession]);
+  }, [session, sessionId, models, defaultModelId, addNodeToSession]);
 
   const handleUploadComplete = (extractedText: string) => {
     if (!session || !defaultModelId) return;
