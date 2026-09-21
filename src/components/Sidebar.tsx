@@ -194,7 +194,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
       </button>
 
       <div className="px-5 py-4 border-b border-neutral-100">
-        <h1 className="text-lg font-medium gradient-text">TreeAI</h1>
+        <h1 className="text-lg font-medium gradient-text">Tree AI Plus</h1>
       </div>
 
       <div className="px-4 py-3">

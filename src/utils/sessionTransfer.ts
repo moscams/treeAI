@@ -95,7 +95,7 @@ export function parseExportFile(text: string): { data: ParsedExportFile } | { er
   const file = raw as Partial<SessionExportFile>;
 
   if (file.format !== EXPORT_FORMAT) {
-    return { error: '这不是 TreeAI 导出的备份文件' };
+    return { error: '这不是 Tree AI Plus 导出的备份文件' };
   }
   if (typeof file.version !== 'number') {
     return { error: '文件缺少版本号' };
