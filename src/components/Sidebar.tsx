@@ -1,13 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
+import { useModelStore } from '../stores/modelStore';
 import { 
   Search, Plus, Settings, Trash2, Edit, X, ChevronLeft,
-  MessageSquare, Library, Sun, Moon
+  MessageSquare, Sun, Moon, Download, Upload, FileJson
 } from 'lucide-react';
 import { gsap } from 'gsap';
-import { showSuccess, showWarning, showInfo } from '../utils/notification';
+import { showSuccess, showWarning, showInfo, showError } from '../utils/notification';
 import { useThemeStore } from '../stores/themeStore';
 import { DEFAULT_SESSION_TITLE } from '../utils/sessionTitle';
+import {
+  buildExportFile,
+  downloadJson,
+  parseExportFile,
+  safeFileName,
+} from '../utils/sessionTransfer';
+import type { Session } from '../types';
 
 interface SidebarProps {
   onModelManagerClick: () => void;
@@ -25,8 +33,11 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
     updateSession,
     searchQuery,
     setSearchQuery,
-    filteredSessions
+    filteredSessions,
+    importSessions
   } = useSessionStore();
+
+  const { models, importModels } = useModelStore();
 
   const { theme, toggleTheme } = useThemeStore();
 
@@ -34,6 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
   const [editTitle, setEditTitle] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = sidebarRef.current;
@@ -98,6 +110,73 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
   const handleDeleteSession = (id: string) => {
     deleteSession(id);
     showInfo('会话已删除');
+  };
+
+  // ---- 备份 / 恢复 ----
+
+  const handleExportAll = () => {
+    if (sessions.length === 0) {
+      showWarning('还没有会话可以导出');
+      return;
+    }
+    // 带上模型配置（apiKey 会在 buildExportFile 里被清空），
+    // 否则导入后每个节点的温度/token 上限都失效了。
+    const file = buildExportFile(sessions, models);
+    downloadJson(
+      `treeai-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      file
+    );
+    showSuccess(`已导出 ${sessions.length} 个会话`);
+  };
+
+  const handleExportSession = (session: Session) => {
+    // 同一个 schema，只是数组里只有一条 —— 导入端不需要分支处理
+    const file = buildExportFile([session]);
+    downloadJson(`${safeFileName(session.title)}-session.json`, file);
+    showSuccess('会话已导出');
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // 清空 value，否则连续导入同一个文件不会再触发 change
+    e.target.value = '';
+    if (!file) return;
+
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      showError('读取文件失败');
+      return;
+    }
+
+    const parsed = parseExportFile(text);
+    if ('error' in parsed) {
+      showError(`导入失败：${parsed.error}`);
+      return;
+    }
+
+    const { sessions: incomingSessions, models: incomingModels } = parsed.data;
+
+    const sessionResult = await importSessions(incomingSessions);
+    const modelResult = incomingModels.length > 0
+      ? await importModels(incomingModels)
+      : { added: 0, skipped: 0 };
+
+    if (sessionResult.added === 0) {
+      showWarning(
+        sessionResult.skipped > 0
+          ? `没有新增会话：这 ${sessionResult.skipped} 个会话都已经存在了`
+          : '文件里没有可导入的会话'
+      );
+      return;
+    }
+
+    const parts = [`新增 ${sessionResult.added} 个会话`];
+    if (sessionResult.skipped > 0) parts.push(`跳过 ${sessionResult.skipped} 个已存在的`);
+    if (modelResult.added > 0) parts.push(`导入 ${modelResult.added} 个模型配置（需重填 API Key）`);
+
+    showSuccess(`导入完成：${parts.join('，')}`);
   };
 
   if (collapsed) return null;
@@ -189,6 +268,16 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
                   className="text-neutral-500 hover:text-neutral-700 p-1 rounded-md hover:bg-neutral-100"
                   onClick={(e) => {
                     e.stopPropagation();
+                    handleExportSession(session);
+                  }}
+                  title="导出此会话（JSON）"
+                >
+                  <FileJson size={14} />
+                </button>
+                <button 
+                  className="text-neutral-500 hover:text-neutral-700 p-1 rounded-md hover:bg-neutral-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     handleDeleteSession(session.id);
                   }}
                 >
@@ -214,13 +303,23 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
         <button 
           className="flex-1 flex items-center justify-center py-2 text-neutral-600 hover:bg-neutral-50 rounded-md transition-colors"
           onClick={onModelManagerClick}
+          title="模型设置"
         >
           <Settings size={18} />
         </button>
         <button 
           className="flex-1 flex items-center justify-center py-2 text-neutral-600 hover:bg-neutral-50 rounded-md transition-colors"
+          onClick={handleExportAll}
+          title="导出全部会话（JSON 备份，不含 API Key）"
         >
-          <Library size={18} />
+          <Download size={18} />
+        </button>
+        <button 
+          className="flex-1 flex items-center justify-center py-2 text-neutral-600 hover:bg-neutral-50 rounded-md transition-colors"
+          onClick={() => importInputRef.current?.click()}
+          title="导入会话备份（已存在的会话会被跳过）"
+        >
+          <Upload size={18} />
         </button>
         <button 
           className="flex-1 flex items-center justify-center py-2 text-neutral-600 hover:bg-neutral-50 rounded-md transition-colors"
@@ -230,6 +329,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onModelManagerClick, collapsed, onTog
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </div>
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleImportFile}
+      />
     </div>
   );
 };
