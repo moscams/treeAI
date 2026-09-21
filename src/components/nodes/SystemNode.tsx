@@ -133,7 +133,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             <input
               type="range"
               min="256"
-              max="4096"
+              max="32768"
               step="256"
               value={node.maxTokens}
               onChange={(e) => onMaxTokensChange(node.id, parseInt(e.target.value))}

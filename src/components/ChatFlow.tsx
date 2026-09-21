@@ -220,7 +220,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       assistantMessage: "",
       modelId: parentNode.modelId || defaultModelId,
       temperature: parentNode.temperature || 0.7,
-      maxTokens: parentNode.maxTokens || 2048,
+      maxTokens: parentNode.maxTokens || 8192,
       createdAt: new Date().toISOString(),
       position // 保存初始位置
     };
@@ -277,7 +277,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     updateNodeInSession(sessionId, {
       ...node,
       isStreaming: true,
-      error: undefined
+      error: undefined,
+      reasoning: undefined
     });
     
     // 初始化流式响应
@@ -285,6 +286,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       ...prev,
       [nodeId]: ""
     }));
+    
+    // 本次请求累积的正文与思维链
+    let accumulatedResponse = '';
+    let accumulatedReasoning = '';
     
     try {
       const systemNode = session.nodes.find(n => n.type === 'system');
@@ -317,8 +322,6 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       
       messages.push({ role: 'user' as const, content: node.userMessage });
       
-      let accumulatedResponse = '';
-      
       await sendChatRequest({
         messages,
         model,
@@ -332,6 +335,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
             ...prev,
             [nodeId]: accumulatedResponse
           }));
+        },
+        // 思维链单独累积，不参与正文渲染，也不会回传给 API
+        onReasoning: (chunk) => {
+          accumulatedReasoning += chunk;
         }
       });
       
@@ -339,6 +346,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       updateNodeInSession(sessionId, {
         ...node,
         assistantMessage: accumulatedResponse,
+        reasoning: accumulatedReasoning || undefined,
         isStreaming: false
       });
       
@@ -356,7 +364,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       updateNodeInSession(sessionId, {
         ...node,
         isStreaming: false,
-        error: message
+        error: message,
+        // 中途失败也保留已经产生的思维链，便于排查
+        reasoning: accumulatedReasoning || undefined
       });
       
       // 清除流式状态
@@ -434,8 +444,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         userMessage: models[0].defaultSystemPrompt,
         assistantMessage: "",
         modelId: models[0].id,
-        temperature: 0.7,
-        maxTokens: 2048,
+        temperature: models[0].temperature ?? 0.7,
+        maxTokens: models[0].maxTokens || 8192,
         createdAt: new Date().toISOString(),
       };
       
@@ -457,7 +467,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       assistantMessage: "",
       modelId: systemNode.modelId || defaultModelId,
       temperature: systemNode.temperature || 0.7,
-      maxTokens: systemNode.maxTokens || 2048,
+      maxTokens: systemNode.maxTokens || 8192,
       createdAt: new Date().toISOString(),
     };
 

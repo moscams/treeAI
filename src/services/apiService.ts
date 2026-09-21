@@ -1,4 +1,5 @@
 import { Model } from '../types';
+import { resolveReasoningEffort } from '../utils/reasoningEffort';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -12,16 +13,31 @@ interface ChatRequestOptions {
   maxTokens: number;
   signal?: AbortSignal;
   onChunk: (chunk: string) => void;
+  /** 思维链分片回调。与正文分开，不会混进 messages */
+  onReasoning?: (chunk: string) => void;
 }
 
 export async function sendChatRequest(options: ChatRequestOptions): Promise<void> {
-  const { messages, model, temperature, maxTokens, signal, onChunk } = options;
+  const { messages, model, temperature, maxTokens, signal, onChunk, onReasoning } = options;
   
   try {
-    const isOpenAI = model.baseUrl.includes('openai.com');
-    const endpoint = isOpenAI 
-      ? `${model.baseUrl}/chat/completions` 
-      : `${model.baseUrl}/chat/completions`;
+    // 去掉结尾多余的斜杠，避免拼出 //chat/completions
+    const baseUrl = model.baseUrl.replace(/\/+$/, '');
+    const endpoint = `${baseUrl}/chat/completions`;
+
+    const requestBody: Record<string, unknown> = {
+      model: model.modelName,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: true
+    };
+
+    // 思考强度：'default' 时不下发该参数，保持服务商原有默认行为
+    const reasoningEffort = resolveReasoningEffort(model);
+    if (reasoningEffort !== 'default') {
+      requestBody.reasoning_effort = reasoningEffort;
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -29,13 +45,7 @@ export async function sendChatRequest(options: ChatRequestOptions): Promise<void
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${model.apiKey}`
       },
-      body: JSON.stringify({
-        model: model.modelName,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: true
-      }),
+      body: JSON.stringify(requestBody),
       signal
     });
 
@@ -73,18 +83,19 @@ export async function sendChatRequest(options: ChatRequestOptions): Promise<void
 
           try {
             const json = JSON.parse(data);
-            let content = '';
+            const choice = json.choices?.[0];
             
-            if (isOpenAI) {
-              // OpenAI format
-              content = json.choices?.[0]?.delta?.content || '';
-            } else {
-              // Handle other API formats as needed
-              content = json.choices?.[0]?.delta?.content || 
-                       json.choices?.[0]?.text || 
-                       json.output || 
-                       '';
+            // 思考型模型的思维链，单独走一条通道，绝不混进正文
+            const reasoning = choice?.delta?.reasoning_content;
+            if (reasoning && onReasoning) {
+              onReasoning(reasoning);
             }
+            
+            // 兼容 OpenAI / DeepSeek 等流式返回格式
+            const content = choice?.delta?.content || 
+                            choice?.text || 
+                            json.output || 
+                            '';
             
             if (content) {
               onChunk(content);

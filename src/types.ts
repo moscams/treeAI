@@ -1,5 +1,7 @@
 // Main data types for the application
 
+export type ReasoningEffort = 'default' | 'none' | 'low' | 'high' | 'max';
+
 export interface Model {
   id: string;
   name: string;
@@ -9,6 +11,11 @@ export interface Model {
   defaultSystemPrompt: string;
   maxTokens: number;
   temperature: number;
+  /**
+   * 思考强度。'default' 表示不发送 reasoning_effort，交由服务商默认行为决定。
+   * DeepSeek V4 的取值：none 关闭思考 / low / high / max。
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface Session {
@@ -31,6 +38,11 @@ export interface ChatNode {
   createdAt: string;
   isStreaming?: boolean;
   error?: string;
+  /**
+   * 思考型模型的思维链（reasoning_content）。
+   * 仅本地留存展示用，绝不会回传给 API —— 带 tools 时回传才需要，不带 tools 传了也会被忽略。
+   */
+  reasoning?: string;
   position?: NodePosition;
 }
 

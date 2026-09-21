@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Save, Trash2 } from 'lucide-react';
 import { useModelStore } from '../stores/modelStore';
-import { Model } from '../types';
+import { Model, ReasoningEffort } from '../types';
+import { REASONING_EFFORT_OPTIONS, resolveReasoningEffort } from '../utils/reasoningEffort';
 import { gsap } from 'gsap';
 
 interface ModelManagerProps {
@@ -44,7 +45,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onClose }) => {
       apiKey: '',
       modelName: 'gpt-4',
       defaultSystemPrompt: 'You are a helpful assistant.',
-      maxTokens: 2048,
+      maxTokens: 8192,
       temperature: 0.7
     };
     
@@ -195,6 +196,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onClose }) => {
                 
                 <div>
                   <label className="block text-xs font-medium text-neutral-700 mb-1">
+                    思考强度 (reasoning_effort)
+                  </label>
+                  <select
+                    value={editingModel.reasoningEffort ?? resolveReasoningEffort(editingModel)}
+                    onChange={(e) => setEditingModel({ ...editingModel, reasoningEffort: e.target.value as ReasoningEffort })}
+                    className="w-full p-2 border border-neutral-200 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                  >
+                    {REASONING_EFFORT_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-neutral-400">
+                    DeepSeek V4 起 thinking 默认开启且 effort=high。聊天场景建议 low：思考量小、响应快、输出 token 便宜。
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">
                     默认系统提示词
                   </label>
                   <textarea
@@ -234,7 +253,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onClose }) => {
                     <input
                       type="range"
                       min="256"
-                      max="4096"
+                      max="32768"
                       step="256"
                       value={editingModel.maxTokens}
                       onChange={(e) => setEditingModel({ ...editingModel, maxTokens: parseInt(e.target.value) })}

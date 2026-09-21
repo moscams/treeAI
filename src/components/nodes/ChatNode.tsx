@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { MdPreview } from 'md-editor-rt';
 import 'md-editor-rt/lib/preview.css';
-import { Plus, Send, RefreshCcw, Copy, Settings, Trash2, MessageSquare } from 'lucide-react';
+import { Plus, Send, RefreshCcw, Copy, Settings, Trash2, MessageSquare, Brain, ChevronDown } from 'lucide-react';
 import { useModelStore } from '../../stores/modelStore';
 import { gsap } from 'gsap';
 import { showSuccess, showInfo, showWarning } from '../../utils/notification';
@@ -13,6 +13,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   const [userMessage, setUserMessage] = useState(node.userMessage || '');
   const [isEditingUser, setIsEditingUser] = useState(!node.userMessage);
   const [showSettings, setShowSettings] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
   
   const { models } = useModelStore();
   
@@ -195,7 +196,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             <input
               type="range"
               min="256"
-              max="4096"
+              max="32768"
               step="256"
               value={node.maxTokens}
               onChange={(e) => {
@@ -288,6 +289,33 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         ) : node.error ? (
           <div className="text-red-500 mb-2">
             Error: {node.error}
+          </div>
+        ) : null}
+
+        {node.reasoning ? (
+          <div className="mb-2 border border-neutral-100 rounded-md overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowReasoning(v => !v)}
+              className="w-full flex items-center justify-between px-2 py-1.5 text-xs text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors"
+            >
+              <span className="flex items-center">
+                <Brain size={12} className="mr-1.5" />
+                思考过程 · {node.reasoning.length} 字
+              </span>
+              <ChevronDown
+                size={12}
+                className={`transition-transform ${showReasoning ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {showReasoning && (
+              <pre
+                className="m-0 px-2.5 py-2 text-xs leading-relaxed text-neutral-500 whitespace-pre-wrap break-words max-h-[240px] overflow-auto border-t border-neutral-100 bg-neutral-50/50 font-sans"
+                onWheel={(e) => e.stopPropagation()}
+              >
+                {node.reasoning}
+              </pre>
+            )}
           </div>
         ) : null}
 
