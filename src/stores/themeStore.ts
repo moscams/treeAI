@@ -25,6 +25,12 @@ export function applyTheme(theme: Theme): void {
   document.documentElement.classList.toggle('dark', theme === 'dark');
   // 让原生控件（滚动条、输入框）也跟着切换
   document.documentElement.style.colorScheme = theme;
+
+  // 浏览器工具栏 / 移动端状态栏的颜色也跟着走
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.setAttribute('content', theme === 'dark' ? '#121212' : '#fafafa');
+  }
 }
 
 const initialTheme: Theme = readStoredTheme() ?? (systemPrefersDark() ? 'dark' : 'light');

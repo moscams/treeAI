@@ -44,7 +44,13 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  /* 用系统字体栈，而不是从 Google Fonts 拉 Inter：
+     Inter 没有中文字形，中文本来就在走系统回退 —— 拉它只为了英文和数字，
+     却要多花 100KB+ 和一次外部请求。系统栈在各平台上反而更贴合，
+     而且这里显式列了中文字体，中文渲染更稳定。
+     目的：整个应用零外链。 */
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   @apply bg-neutral-50 text-neutral-900 overflow-hidden;
   height: 100vh;
 }
@@ -425,4 +431,102 @@ html.dark .md-preview {
 
 html.dark ::-webkit-scrollbar-thumb {
   background-color: rgba(120, 120, 125, 0.5);
+}
+
+/* ============================================================
+   代码高亮配色
+   原来是 md-editor-rt 在运行时从 unpkg.com 拉 highlight.js 的主题 CSS
+   （没有 SRI，等于执行第三方代码）。现在 highlight.js 由 Vite 本地打包，
+   配色自己写 —— 而且用和中性色一样的 CSS 变量思路，夜间模式白送。
+   色板取自 atom-one-light / atom-one-dark。
+   ============================================================ */
+:root {
+  --hljs-comment: #a0a1a7;
+  --hljs-keyword: #a626a4;
+  --hljs-tag: #e45649;
+  --hljs-string: #50a14f;
+  --hljs-number: #986801;
+  --hljs-title: #4078f2;
+  --hljs-builtin: #c18401;
+  --hljs-literal: #0184bb;
+}
+
+html.dark {
+  --hljs-comment: #5c6370;
+  --hljs-keyword: #c678dd;
+  --hljs-tag: #e06c75;
+  --hljs-string: #98c379;
+  --hljs-number: #d19a66;
+  --hljs-title: #61afef;
+  --hljs-builtin: #e6c07b;
+  --hljs-literal: #56b6c2;
+}
+
+/* 刻意不设置 .hljs 的基础 color / background：
+   md-editor 自己的 --md-theme-code-block-* 已经在管这两个（且已适配暗色），
+   而且它的选择器特异度更高，写了也会被盖掉。这里只负责 token 颜色。 */
+.md-preview .hljs-comment,
+.md-preview .hljs-quote {
+  color: var(--hljs-comment);
+  font-style: italic;
+}
+
+.md-preview .hljs-doctag,
+.md-preview .hljs-keyword,
+.md-preview .hljs-formula {
+  color: var(--hljs-keyword);
+}
+
+.md-preview .hljs-name,
+.md-preview .hljs-section,
+.md-preview .hljs-selector-tag,
+.md-preview .hljs-deletion,
+.md-preview .hljs-subst {
+  color: var(--hljs-tag);
+}
+
+.md-preview .hljs-literal {
+  color: var(--hljs-literal);
+}
+
+.md-preview .hljs-string,
+.md-preview .hljs-regexp,
+.md-preview .hljs-addition,
+.md-preview .hljs-attribute,
+.md-preview .hljs-meta .hljs-string {
+  color: var(--hljs-string);
+}
+
+.md-preview .hljs-attr,
+.md-preview .hljs-variable,
+.md-preview .hljs-template-variable,
+.md-preview .hljs-type,
+.md-preview .hljs-selector-class,
+.md-preview .hljs-selector-attr,
+.md-preview .hljs-selector-pseudo,
+.md-preview .hljs-number {
+  color: var(--hljs-number);
+}
+
+.md-preview .hljs-symbol,
+.md-preview .hljs-bullet,
+.md-preview .hljs-link,
+.md-preview .hljs-meta,
+.md-preview .hljs-selector-id,
+.md-preview .hljs-title {
+  color: var(--hljs-title);
+}
+
+.md-preview .hljs-built_in,
+.md-preview .hljs-title.class_,
+.md-preview .hljs-class .hljs-title {
+  color: var(--hljs-builtin);
+}
+
+.md-preview .hljs-emphasis {
+  font-style: italic;
+}
+
+.md-preview .hljs-strong {
+  font-weight: 700;
 }
