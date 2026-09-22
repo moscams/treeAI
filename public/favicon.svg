@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tree AI Plus">
   <rect width="64" height="64" rx="16" fill="#13231d"/>
-  <path d="M16 45 28 35m0 0 11-12m-11 12h15m-4-12h10" fill="none" stroke="#9fe0bf" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="16" cy="45" r="4" fill="#f4fbf7"/>
-  <circle cx="28" cy="35" r="4" fill="#f4fbf7"/>
-  <circle cx="39" cy="23" r="4" fill="#f4fbf7"/>
-  <circle cx="43" cy="35" r="4" fill="#f4fbf7"/>
-  <circle cx="49" cy="23" r="4" fill="#f4fbf7"/>
+  <g fill="none" stroke="#9fe0bf" stroke-opacity="0.14" stroke-width="1">
+    <path d="M8 8H56 M8 16H56 M8 24H56 M8 32H56 M8 40H56 M8 48H56 M8 56H56
+             M8 8V56 M16 8V56 M24 8V56 M32 8V56 M40 8V56 M48 8V56 M56 8V56"/>
+  </g>
+  <path d="M32 20.5V31H17V41.5 M32 20.5V31H47V41.5" fill="none" stroke="#9fe0bf" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#13231d" stroke="#9fe0bf" stroke-width="3.5">
+    <circle cx="32" cy="15" r="4.5"/>
+    <circle cx="17" cy="47" r="4.5"/>
+    <circle cx="47" cy="47" r="4.5"/>
+  </g>
 </svg>

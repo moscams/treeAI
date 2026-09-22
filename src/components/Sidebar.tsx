@@ -207,11 +207,30 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
         <ChevronLeft size={14} className="text-neutral-600" />
       </button>
 
-      <div className="px-5 py-4 border-b border-neutral-100">
-        <div className="flex items-center gap-2">
+      <div className="px-4 py-4 border-b border-neutral-100 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {/* 和浏览器标签页 favicon、「关于」页用同一个标识 */}
-          <Logo size={26} />
-          <h1 className="text-lg font-medium gradient-text">Tree AI Plus</h1>
+          <Logo size={24} />
+          <h1 className="text-base font-medium gradient-text whitespace-nowrap">Tree AI Plus</h1>
+        </div>
+        {/* 设置 / 主题从底部挤上来，顺手缩到 15px。
+            px-4 + pr-4 让图标右缘离侧栏边 32px，给浮在边框上的折叠小圆钮
+            （占右侧 14px）留出约 18px 空隙，两者不撞。 */}
+        <div className="flex items-center gap-0.5 shrink-0 pr-4">
+          <button
+            className="flex items-center justify-center p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100 rounded-md transition-colors"
+            onClick={() => onOpenSettings('models')}
+            title={t('设置')}
+          >
+            <Settings size={15} />
+          </button>
+          <button
+            className="flex items-center justify-center p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100 rounded-md transition-colors"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? t('切换到日间模式') : t('切换到夜间模式')}
+          >
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
         </div>
       </div>
 
@@ -476,30 +495,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
         </div>
       )}
 
-      {/* 「新建会话」和它下面那排设置/主题合并成**一行**：
-          以前是两行两条分隔线，底部白占将近 60px 的高度；
-          现在新建占满剩余宽度，两个图标按钮插在右侧，一行了事。 */}
-      <div className="px-3 py-3 border-t border-neutral-100 flex items-center gap-1.5">
+      {/* 底部只留「新建会话」一整条 —— 设置/主题已挤到顶栏，
+          这里不再塞两个小图标，重心就正了。 */}
+      <div className="px-3 py-3 border-t border-neutral-100">
         <button
-          className="flex-1 min-w-0 flex items-center justify-center space-x-2 py-2 px-4 bg-neutral-900 text-white rounded-md hover:bg-neutral-800 transition-colors"
+          className="w-full flex items-center justify-center space-x-2 py-2 px-4 bg-neutral-900 text-white rounded-md hover:bg-neutral-800 transition-colors"
           onClick={handleCreateSession}
         >
           <Plus size={16} />
           <span className="text-sm">{t('新建会话')}</span>
-        </button>
-        <button
-          className="shrink-0 flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
-          onClick={() => onOpenSettings('models')}
-          title={t('设置')}
-        >
-          <Settings size={18} />
-        </button>
-        <button
-          className="shrink-0 flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? t('切换到日间模式') : t('切换到夜间模式')}
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </div>
 
