@@ -284,7 +284,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   }, [handleWheel]);
 
   return (
-    <div ref={nodeRef} className="relative">
+    <div ref={nodeRef} className="relative group">
       <div className="node-content bg-white rounded-lg overflow-hidden border border-neutral-200 shadow-minimal">
       <Handle
         type="target"
@@ -488,7 +488,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         ) : null}
 
         {answerText ? (
-          <div className="relative group">
+          <div>
             <div 
               className="preview-container"
               onWheel={(e: React.WheelEvent) => {
@@ -508,26 +508,6 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
                 previewTheme="vuepress"
               />
             </div>
-            {/* 复制按钮只靠绝对定位多出来，不参与布局，所以出现时不会把排版顶动 */}
-            {!node.isStreaming && (
-              /* 复制/重试改成悬停浮层，绝对定位、不参与布局 —— 底栏整条省掉。 */
-              <div className="absolute top-0 right-0 flex gap-0.5 rounded-bl-md bg-white/85 px-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
-                  onClick={() => handleCopyToClipboard(node.assistantMessage)}
-                  title={t('复制到剪贴板')}
-                >
-                  <Copy size={14} />
-                </button>
-                <button
-                  className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
-                  onClick={() => onRetry(node.id)}
-                  title={t('重新生成回复（另起一个新分支，保留当前回答）')}
-                >
-                  <RefreshCcw size={14} />
-                </button>
-              </div>
-            )}
           </div>
         ) : !node.isStreaming ? (
           <div className="flex min-h-[160px] flex-col items-center justify-center gap-3 text-sm italic text-neutral-400">
@@ -579,13 +559,37 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       />
       </div>
 
+      {/* 右下角悬浮的复制 / 重试：
+          - 绝对定位（在 .node-content 之外，不参与布局），不占高度；
+          - 悬停整个节点才出现（外层 wrapper 加了 group），平时不挡正文；
+          - 没回答时不显示复制（复制不出东西），但重试留着 —— 报错后就靠它。 */}
+      {!node.isStreaming && (
+        <div className="absolute bottom-2 right-2 z-10 flex items-center gap-0.5 rounded-md border border-neutral-100 bg-white/90 px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+          {hasAnswer && (
+            <button
+              className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+              onClick={() => handleCopyToClipboard(node.assistantMessage)}
+              title={t('复制到剪贴板')}
+            >
+              <Copy size={14} />
+            </button>
+          )}
+          <button
+            className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+            onClick={() => onRetry(node.id)}
+            title={t('重新生成回复（另起一个新分支，保留当前回答）')}
+          >
+            <RefreshCcw size={14} />
+          </button>
+        </div>
+      )}
+
       {/* 底部「+」悬浮在节点外沿上：绝对定位在 .node-content 之外（外层 wrapper
           不能有 overflow:hidden，否则会被裁掉），因此不占任何布局高度。
-          放在**右下角**：底部中央正好是连线起点（source handle），几个子节点
-          分叉时几条边都从那里出发，浮在中间会和连线撞在一起。 */}
+          压在底部连线上，视觉上像「从这条线继续长出去」。 */}
       <button
         type="button"
-        className={`absolute -bottom-3 -right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full border shadow-sm transition-colors ${
+        className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full border shadow-sm transition-colors ${
           hasAnswer
             ? 'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-700'
             : 'bg-white text-neutral-300 border-neutral-200 cursor-not-allowed'
