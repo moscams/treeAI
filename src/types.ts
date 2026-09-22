@@ -31,6 +31,15 @@ export interface Model {
    * DeepSeek V4 的取值：none 关闭思考 / low / high / max。
    */
   reasoningEffort?: ReasoningEffort;
+  /** 列表顺序。数字最小的排最前，也就是**默认模型**。旧数据没有这个字段。 */
+  sortOrder?: number;
+}
+
+/** 会话文件夹。单层，不支持嵌套 —— 够用，且不会把侧边栏变成一棵要维护的树。 */
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: string;
 }
 
 export interface Session {
@@ -39,6 +48,10 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   nodes: ChatNode[];
+  /** 收藏标记。只用于筛选和视觉标记，不影响排序。旧数据没有这个字段，当作未收藏。 */
+  starred?: boolean;
+  /** 所属文件夹。undefined / null 表示未分类。旧数据没有这个字段。 */
+  folderId?: string | null;
 }
 
 export interface ChatNode {
@@ -74,9 +87,14 @@ export interface NodeData {
   /** 流式期间的思维链（正文之前到达，且有独立的 SSE 通道） */
   streamingReasoning?: string | null;
   onAddChild: (parentId: string) => void;
-  onEdit: (nodeId: string, content: string, type: 'user' | 'assistant' | 'system') => void;
+  onEdit: (nodeId: string, content: string, type: 'user' | 'assistant' | 'system', isDraft?: boolean) => void;
   onDelete: (nodeId: string) => void;
   onRetry: (nodeId: string) => void;
+  /**
+   * 原地重出：改了这条消息后重新生成，结果写回**本节点**，不另起分支。
+   * （「重新生成」按钮走 onRetry，那条才会保留旧答案、起兄弟分支。）
+   */
+  onResubmit: (nodeId: string) => void;
   onModelChange: (nodeId: string, modelId: string) => void;
   onTemperatureChange: (nodeId: string, temperature: number) => void;
   onMaxTokensChange: (nodeId: string, maxTokens: number) => void;

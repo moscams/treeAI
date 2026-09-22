@@ -17,11 +17,12 @@ import { useModelStore } from '../stores/modelStore';
 import { useThemeStore } from '../stores/themeStore';
 import { ChatNode as ChatNodeType, NodeData, UsageStats } from '../types';
 import { sendChatRequest } from '../services/apiService';
-import { Share2, LayoutGrid, FileUp } from 'lucide-react';
+import { Share2, LayoutGrid, FileUp, FileJson } from 'lucide-react';
 import { exportToMindmap } from '../utils/exportUtils';
+import { exportSessionToFile } from '../utils/sessionTransfer';
 import FileUploadButton from './FileUploadButton';
 import { showSuccess, showError, showInfo } from '../utils/notification';
-import { DEFAULT_SESSION_TITLE, deriveSessionTitle } from '../utils/sessionTitle';
+import { deriveSessionTitle } from '../utils/sessionTitle';
 
 /*
  * 画布布局常量。
@@ -107,7 +108,7 @@ interface ChatFlowProps {
 }
 
 const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
-  const { sessions, addNodeToSession, updateNodeInSession, deleteNodeFromSession, updateSession } = useSessionStore();
+  const { sessions, addNodeToSession, updateNodeInSession, deleteNodeFromSession, autoTitleSession } = useSessionStore();
   const { models, defaultModelId } = useModelStore();
   const { theme } = useThemeStore();
   const session = sessions.find(s => s.id === sessionId);
@@ -119,10 +120,19 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   // 刚新建的节点 id。渲染完成后把它平移到视野中间，否则可能落在屏幕外面。
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
 
-  // 上一次交给 React Flow 的节点对象。两个用途：
-  //   1) 原样复用没变化的节点，让 React Flow 跳过它的重渲染；
-  //   2) 重建时把 React Flow 写回来的 width/height 等字段带过去（详见 buildFlowNode）。
-  const nodeCacheRef = useRef<Map<string, Node>>(new Map());
+  /*
+   * 上一次交给 React Flow 的节点对象。两个用途：
+   *   1) 原样复用没变化的节点，让 React Flow 跳过它的重渲染；
+   *   2) 重建时把 React Flow 量出来的 width/height 带过去（详见 buildFlowNode）。
+   *
+   * ⚠️ 数据源必须是 `nodes` state，不能是我们传出去的那批对象。
+   * React Flow 的 applyChanges 里是 `const updateItem = { ...item }`（拷贝），
+   * 量到的尺寸只写回 state，我们传出去的对象永远没有 width/height。
+   * 每次渲染从 state 同步一份，重建节点时才能把测量值带住 ——
+   * 否则边会因为 getNodeData().isValid === false 而整条不渲染。
+   */
+  const flowNodesRef = useRef<Map<string, Node>>(new Map());
+  flowNodesRef.current = new Map(nodes.map(n => [n.id, n]));
   // 当前 edges 的结构指纹，避免结构没变时反复 setEdges
   const edgeSignatureRef = useRef('');
 
@@ -267,10 +277,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         streamingReasoning: streamingReasoning[node.id] || null,
         isRoot: node.type === 'system',
         autoFocus: pendingFocusId === node.id
-      }, nodeCacheRef.current.get(node.id));
+      }, flowNodesRef.current.get(node.id));
     });
 
-    nodeCacheRef.current = new Map(reactFlowNodes.map(n => [n.id, n]));
     setNodes(reactFlowNodes);
     commitEdges(buildFlowEdges(session.nodes));
   
@@ -356,7 +365,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     setPendingFocusId(newNode.id);
   };
 
-  const handleEditNode = (nodeId: string, content: string, type: 'user' | 'assistant' | 'system') => {
+  const handleEditNode = (nodeId: string, content: string, type: 'user' | 'assistant' | 'system', _isDraft = false) => {
     if (!session) return;
     
     const node = session.nodes.find(n => n.id === nodeId);
@@ -385,12 +394,19 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     // }, 100);
   };
 
-  const handleRetryNode = async (nodeId: string) => {
+  /**
+   * 跑一次生成请求。
+   *
+   * `contextNodes` 是拼上下文用的节点快照 —— 分支场景下新节点还没写进 store，
+   * 必须显式传进来，否则第一次请求会漏掉它自己的 userMessage。落库那边用
+   * updateNodeInSession 的 upsert，所以不怕调用时 store 里还没有这个 id。
+   */
+  const runNodeGeneration = async (nodeId: string, contextNodes: ChatNodeType[]) => {
     if (!session) return;
-    
-    const node = session.nodes.find(n => n.id === nodeId);
+
+    const node = contextNodes.find(n => n.id === nodeId);
     if (!node) return;
-    
+
     const model = models.find(m => m.id === node.modelId);
     if (!model) {
       // 以前这里是静默 return —— 点了「重新生成」什么都不发生，也没任何提示。
@@ -398,23 +414,14 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       showError('该节点引用的模型不存在，请在节点设置里重新选一个模型');
       return;
     }
-    
+
     if (abortControllerRef.current[nodeId]) {
       abortControllerRef.current[nodeId].abort();
     }
-    
+
     const abortController = new AbortController();
     abortControllerRef.current[nodeId] = abortController;
-    
-    // 只更新streaming状态，不更新内容
-    updateNodeInSession(sessionId, {
-      ...node,
-      isStreaming: true,
-      error: undefined,
-      reasoning: undefined,
-      usage: undefined
-    });
-    
+
     // 初始化流式响应
     setStreamingResponses(prev => ({
       ...prev,
@@ -424,28 +431,28 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       ...prev,
       [nodeId]: ""
     }));
-    
+
     // 本次请求累积的正文与思维链
     let accumulatedResponse = '';
     let accumulatedReasoning = '';
     let accumulatedUsage: UsageStats | undefined;
     const startedAt = Date.now();
-    
+
     try {
-      const systemNode = session.nodes.find(n => n.type === 'system');
+      const systemNode = contextNodes.find(n => n.type === 'system');
       const systemPrompt = systemNode?.userMessage || model.defaultSystemPrompt;
-      
+
       const messages = [];
-      
+
       if (systemPrompt) {
         messages.push({ role: 'system' as const, content: systemPrompt });
       }
-      
+
       let currentParentId = node.parentId;
       const messageChain = [];
-      
+
       while (currentParentId) {
-        const parentNode = session.nodes.find(n => n.id === currentParentId);
+        const parentNode = contextNodes.find(n => n.id === currentParentId);
         if (parentNode && parentNode.type === 'chat') {
           messageChain.unshift({
             user: parentNode.userMessage,
@@ -454,23 +461,21 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         }
         currentParentId = parentNode?.parentId || null;
       }
-      
+
       messageChain.forEach(msg => {
         if (msg.user) messages.push({ role: 'user' as const, content: msg.user });
         if (msg.assistant) messages.push({ role: 'assistant' as const, content: msg.assistant });
       });
-      
+
       messages.push({ role: 'user' as const, content: node.userMessage });
 
       // 会话标题还是默认值时，用第一个问题自动命名。纯本地字符串处理，
-      // 不额外请求 API。用户在侧边栏改过标题后这里就不再介入。
-      if (session.title === DEFAULT_SESSION_TITLE) {
-        const derivedTitle = deriveSessionTitle(node.userMessage);
-        if (derivedTitle) {
-          updateSession({ ...session, title: derivedTitle });
-        }
+      // 不额外请求 API。用户在侧边栏改过标题后 action 内部会直接忽略。
+      const derivedTitle = deriveSessionTitle(node.userMessage);
+      if (derivedTitle) {
+        autoTitleSession(sessionId, derivedTitle);
       }
-      
+
       await sendChatRequest({
         messages,
         model,
@@ -498,7 +503,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
           accumulatedUsage = u;
         }
       });
-      
+
       // 完成后再一次性更新节点内容
       updateNodeInSession(sessionId, {
         ...node,
@@ -507,17 +512,18 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         usage: accumulatedUsage
           ? { ...accumulatedUsage, durationMs: Date.now() - startedAt }
           : undefined,
-        isStreaming: false
+        isStreaming: false,
+        error: undefined
       });
-      
+
       // 清除流式状态（正文 + 思维链）。此时节点已经拿到持久化的
       // reasoning，继续流式渲染反而会和落库版本重复。
       clearStreamingState(nodeId);
-      
+
     } catch (error: unknown) {
       console.error('Chat request failed:', error);
       const message = error instanceof Error ? error.message : 'Failed to get response';
-      
+
       updateNodeInSession(sessionId, {
         ...node,
         isStreaming: false,
@@ -528,12 +534,97 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
           ? { ...accumulatedUsage, durationMs: Date.now() - startedAt }
           : undefined
       });
-      
+
       // 清除流式状态
       clearStreamingState(nodeId);
     } finally {
       delete abortControllerRef.current[nodeId];
     }
+  };
+
+  /**
+   * 「重新生成」按钮。
+   *
+   * 已经有回答时，另起一个**兄弟分支**（同一个父节点、同一条 userMessage），
+   * 旧答案原样保留。这棵树的意义就是比较不同回答，覆盖掉旧答案等于把
+   * 唯一的对照丢了。节点还没有回答时（刚发出去、或上次报错）才写回原节点。
+   */
+  const handleRetryNode = (nodeId: string) => {
+    if (!session) return;
+
+    const node = session.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const model = models.find(m => m.id === node.modelId);
+    if (!model) {
+      showError('该节点引用的模型不存在，请在节点设置里重新选一个模型');
+      return;
+    }
+
+    if (node.assistantMessage || node.reasoning) {
+      const branch: ChatNodeType = {
+        ...node,
+        id: crypto.randomUUID(),
+        assistantMessage: '',
+        reasoning: undefined,
+        usage: undefined,
+        error: undefined,
+        isStreaming: true,
+        createdAt: new Date().toISOString(),
+        position: node.parentId ? computeChildPosition(node.parentId) : undefined,
+      };
+
+      addNodeToSession(sessionId, branch);
+      setPendingFocusId(branch.id);
+      showInfo('已创建新分支，正在重新生成…');
+      // 新节点还没进 store，上下文要手动带上它
+      void runNodeGeneration(branch.id, [...session.nodes, branch]);
+      return;
+    }
+
+    // 首次生成 / 报错后重试：直接写在原节点上
+    updateNodeInSession(sessionId, {
+      ...node,
+      isStreaming: true,
+      error: undefined,
+      reasoning: undefined,
+      usage: undefined
+    });
+    void runNodeGeneration(node.id, session.nodes);
+  };
+
+  /**
+   * 原地重出。
+   *
+   * 和「重新生成」(onRetry) 的区别：**不另起分支**，直接把结果写回本节点。
+   * 适用场景：用户改了这条消息的文字，希望「这个节点重新回答一遍」；
+   * 想保留旧答案做对照的话，他可以自己从父节点拉一个新节点 —— 不在这里替他决定。
+   */
+  const handleResubmitNode = (nodeId: string) => {
+    if (!session) return;
+
+    const node = session.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const model = models.find(m => m.id === node.modelId);
+    if (!model) {
+      showError('该节点引用的模型不存在，请在节点设置里重新选一个模型');
+      return;
+    }
+
+    // 先清掉旧回答：一是避免请求失败时旧内容又冒出来（文不对答），
+    // 二是让 UI 立刻进入「重新生成中」，而不是旧答案和新流式内容混在一起。
+    const cleared: ChatNodeType = {
+      ...node,
+      assistantMessage: '',
+      reasoning: undefined,
+      usage: undefined,
+      error: undefined,
+      isStreaming: true,
+    };
+
+    updateNodeInSession(sessionId, cleared);
+    void runNodeGeneration(nodeId, session.nodes.map(n => (n.id === nodeId ? cleared : n)));
   };
 
   const handleModelChange = (nodeId: string, modelId: string) => {
@@ -605,6 +696,19 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     try {
       exportToMindmap(session);
       showSuccess('导出成功');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      showError('导出失败:' + message);
+    }
+  };
+
+  // 当前会话的 JSON 备份。和「设置 → 数据」里那份是同一套 schema，
+  // 单会话导出也能直接导入别处。
+  const handleExportSession = () => {
+    if (!session) return;
+    try {
+      exportSessionToFile(session);
+      showSuccess('会话已导出');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       showError('导出失败:' + message);
@@ -689,20 +793,21 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   // 但回调本身又必须读到最新的 session / state，所以用 ref 转发：
   // 引用恒定，真正被调用时再去取当前渲染里那份实现。
   const latestHandlers = useRef({
-    handleAddChildNode, handleEditNode, handleDeleteNode, handleRetryNode,
+    handleAddChildNode, handleEditNode, handleDeleteNode, handleRetryNode, handleResubmitNode,
     handleModelChange, handleTemperatureChange, handleMaxTokensChange,
   });
   latestHandlers.current = {
-    handleAddChildNode, handleEditNode, handleDeleteNode, handleRetryNode,
+    handleAddChildNode, handleEditNode, handleDeleteNode, handleRetryNode, handleResubmitNode,
     handleModelChange, handleTemperatureChange, handleMaxTokensChange,
   };
 
   const nodeCallbacks = useMemo((): Omit<NodeData, 'node' | 'isRoot' | 'streamingResponse' | 'streamingReasoning'> => ({
     onAddChild: (parentId: string) => latestHandlers.current.handleAddChildNode(parentId),
-    onEdit: (nodeId: string, content: string, type: 'user' | 'assistant' | 'system') =>
-      latestHandlers.current.handleEditNode(nodeId, content, type),
+    onEdit: (nodeId: string, content: string, type: 'user' | 'assistant' | 'system', isDraft?: boolean) =>
+      latestHandlers.current.handleEditNode(nodeId, content, type, isDraft),
     onDelete: (nodeId: string) => latestHandlers.current.handleDeleteNode(nodeId),
     onRetry: (nodeId: string) => latestHandlers.current.handleRetryNode(nodeId),
+    onResubmit: (nodeId: string) => latestHandlers.current.handleResubmitNode(nodeId),
     onModelChange: (nodeId: string, modelId: string) => latestHandlers.current.handleModelChange(nodeId, modelId),
     onTemperatureChange: (nodeId: string, temperature: number) =>
       latestHandlers.current.handleTemperatureChange(nodeId, temperature),
@@ -714,8 +819,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     if (!session?.nodes) return;
   
     // 创建新的节点数组，确保使用节点保存的位置
-    const previousNodes = nodeCacheRef.current;
-    const nextCache = new Map<string, Node>();
+    const previousNodes = flowNodesRef.current;
 
     const reactFlowNodes = session.nodes.map(node => {
       // 保存过位置就用保存的；没有（手工改过的导入文件、根节点）退回「父节点正下方」
@@ -736,11 +840,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         previous.position.x === position.x &&
         previous.position.y === position.y
       ) {
-        nextCache.set(node.id, previous);
         return previous;
       }
 
-      const next = buildFlowNode(node, position, {
+      return buildFlowNode(node, position, {
         ...nodeCallbacks,
         node,
         streamingResponse: liveResponse,
@@ -748,11 +851,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         isRoot: node.type === 'system',
         autoFocus
       }, previous);
-      nextCache.set(node.id, next);
-      return next;
     });
 
-    nodeCacheRef.current = nextCache;
     setNodes(reactFlowNodes);
     commitEdges(buildFlowEdges(session.nodes));
 
@@ -798,6 +898,14 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         
         <button 
           className="flex items-center justify-center p-2 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
+          onClick={handleExportSession}
+          title="导出当前会话（JSON）"
+        >
+          <FileJson size={18} />
+        </button>
+
+        <button 
+          className="flex items-center justify-center p-2 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
           onClick={handleExport}
           title="导出思维导图"
         >
@@ -825,7 +933,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
           setNodes(nds => applyNodeChanges(changes, nds));
           collectNodeDimensions(changes);
         }}
-        onNodeDragStop={(event, node) => {
+        onNodeDragStop={(_event, node) => {
           // 节点拖动结束后保存位置
           if (!session) return;
           

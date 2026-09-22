@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatFlow from './components/ChatFlow';
-import ModelManager from './components/ModelManager';
+import SettingsModal from './components/SettingsModal';
+import type { SettingsTab } from './components/SettingsModal';
 import NotificationContainer from './components/Notification';
 import { useSessionStore } from './stores/sessionStore';
 import { useModelStore } from './stores/modelStore';
 import { useDatabaseContext } from './context/DatabaseContext';
 import { Session } from './types';
+import { DEFAULT_SESSION_TITLE } from './utils/sessionTitle';
 import { ChevronRight, Loader2, PlusCircle } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [showModelManager, setShowModelManager] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { currentSessionId, setCurrentSessionId } = useSessionStore();
-  const { loadSessions, loadModels } = useDatabaseContext();
+  const { loadSessions, loadModels, loadFolders } = useDatabaseContext();
   const { sessions } = useSessionStore();
   const { models } = useModelStore();
   const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +25,7 @@ const App: React.FC = () => {
       try {
         await loadSessions();
         await loadModels();
+        await loadFolders();
       } catch (error) {
         console.error('Failed to initialize data:', error);
       } finally {
@@ -67,7 +70,7 @@ const App: React.FC = () => {
       )}
       
       <Sidebar 
-        onModelManagerClick={() => setShowModelManager(true)} 
+        onOpenSettings={(tab) => setSettingsTab(tab ?? 'models')} 
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
       />
@@ -82,14 +85,14 @@ const App: React.FC = () => {
                 创建一个新会话，开始与 AI 进行树状结构的对话。
               </p>
               <button 
-                className="flex items-center justify-center space-x-2 px-5 py-2 bg-neutral-900 text-white rounded-md hover:bg-neutral-800 transition-colors"
+                className="inline-flex items-center justify-center space-x-2 px-5 py-2 bg-neutral-900 text-white rounded-md hover:bg-neutral-800 transition-colors"
                 onClick={() => {
                   if (models.length === 0) {
-                    setShowModelManager(true);
+                    setSettingsTab('models');
                   } else {
                     const newSession: Session = {
                       id: crypto.randomUUID(),
-                      title: "新会话",
+                      title: DEFAULT_SESSION_TITLE,
                       createdAt: new Date().toISOString(),
                       updatedAt: new Date().toISOString(),
                       nodes: []
@@ -107,8 +110,11 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {showModelManager && (
-        <ModelManager onClose={() => setShowModelManager(false)} />
+      {settingsTab && (
+        <SettingsModal
+          initialTab={settingsTab}
+          onClose={() => setSettingsTab(null)}
+        />
       )}
       
       <NotificationContainer />

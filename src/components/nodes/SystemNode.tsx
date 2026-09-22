@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Handle, Position, NodeProps } from 'reactflow';
+import { Handle, Position, NodeProps, useUpdateNodeInternals } from 'reactflow';
 import { Plus, Settings } from 'lucide-react';
 import { useModelStore } from '../../stores/modelStore';
 import { gsap } from 'gsap';
@@ -15,15 +15,46 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   
   const nodeRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
 
+  // 同 ChatNode：入场不用位移动画（transform 会污染 React Flow 对 handle 的测量，
+  // 导致动画期间连线终点不贴节点），只做淡入；并且等节点真正可见后再开始淡入
+  // （测量之前 React Flow 会先把它设成 visibility: hidden，提前淡入会“闪一下”）。
   useEffect(() => {
-    if (nodeRef.current) {
-      gsap.fromTo(nodeRef.current, 
-        { y: -20, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.5, ease: "power2.out" }
-      );
-    }
-  }, []);
+    const el = nodeRef.current;
+    if (!el) return;
+
+    let raf = 0;
+    let tween: gsap.core.Tween | null = null;
+    let cancelled = false;
+    const deadline = performance.now() + 2000;
+
+    // 先置 0，避免元素刚变可见那一帧先闪一下满不透明再淡入
+    gsap.set(el, { opacity: 0 });
+
+    const start = () => {
+      if (cancelled) return;
+      const hidden =
+        el.getClientRects().length === 0 || getComputedStyle(el).visibility === 'hidden';
+      if (hidden) {
+        if (performance.now() < deadline) raf = requestAnimationFrame(start);
+        else gsap.set(el, { opacity: 1 });
+        return;
+      }
+      tween = gsap.to(el, {
+        opacity: 1, duration: 0.3, ease: 'power2.out',
+        onComplete: () => updateNodeInternals(id)
+      });
+    };
+
+    raf = requestAnimationFrame(start);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      tween?.kill();
+      gsap.set(el, { opacity: 1 });
+    };
+  }, [id, updateNodeInternals]);
 
   // Debug log for width changes
   useEffect(() => {
@@ -133,8 +164,8 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             <input
               type="range"
               min="256"
-              max="32768"
-              step="256"
+              max="65535"
+              step="1"
               value={node.maxTokens}
               onChange={(e) => onMaxTokensChange(node.id, parseInt(e.target.value))}
               className="w-full accent-neutral-700"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Handle, Position, NodeProps } from 'reactflow';
+import { Handle, Position, NodeProps, useUpdateNodeInternals } from 'reactflow';
 import { MdPreview } from 'md-editor-rt';
 import 'md-editor-rt/lib/preview.css';
 import { Plus, Send, RefreshCcw, Copy, Settings, Trash2, MessageSquare, Brain, ChevronDown } from 'lucide-react';
@@ -10,7 +10,7 @@ import { showSuccess, showInfo, showWarning } from '../../utils/notification';
 import { NodeData } from '../../types';
 
 const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
-  const { node, streamingResponse, streamingReasoning, autoFocus, onEdit, onAddChild, onDelete, onRetry, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
+  const { node, streamingResponse, streamingReasoning, autoFocus, onEdit, onAddChild, onDelete, onRetry, onResubmit, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
   const [userMessage, setUserMessage] = useState(node.userMessage || '');
   const [isEditingUser, setIsEditingUser] = useState(!node.userMessage);
   const [showSettings, setShowSettings] = useState(false);
@@ -46,15 +46,62 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   
   const userInputRef = useRef<HTMLTextAreaElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
   
+  /*
+   * 入场只做透明度，**不做位移动画**。
+   *
+   * 之前的 `y: -20 → 0` 会在动画期间把 handle 一起向上带 20px。React Flow 测量
+   * handle 偏移时，量的是 handle 相对 `.react-flow__node` 包装层的位置 —— 包装层
+   * 不带这个 transform，于是量到的 handle 位置比真实值高；动画结束前连线终点就
+   * 停在节点上方，直到动画结束才“啪”地接上。
+   * 任何 transform（translate / scale）都会污染这个测量，所以动画期间干脆别动位置。
+   *
+   * onComplete 里依旧补一次重测，作为字体/图片迟到导致的尺寸变化的兜底。
+   */
   useEffect(() => {
-    if (nodeRef.current) {
-      gsap.fromTo(nodeRef.current, 
-        { y: -20, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.5, ease: "power2.out" }
-      );
-    }
-  }, []);
+    const el = nodeRef.current;
+    if (!el) return;
+
+    let raf = 0;
+    let tween: gsap.core.Tween | null = null;
+    let cancelled = false;
+    const deadline = performance.now() + 2000;
+
+    // 先置 0。否则元素从 hidden 变 visible 的那一帧会先以满不透明度画一下，
+    // 下一帧才被 rAF 里的淡入改成 0 —— 表现为“先闪一下、再淡入”。
+    gsap.set(el, { opacity: 0 });
+
+    const start = () => {
+      if (cancelled) return;
+
+      // React Flow 在量到尺寸之前会先把节点设成 `visibility: hidden`。
+      // 淡入必须等它**真正可见**之后再开始：否则动画在隐藏期间就已经跑掉一半，
+      // 等节点“出现”时已经接近不透明 —— 看起来像闪一下 / 没有过渡。
+      // 而“什么时候变可见”取决于测量时机，所以这个问题时有时无、很难复现。
+      const hidden =
+        el.getClientRects().length === 0 || getComputedStyle(el).visibility === 'hidden';
+      if (hidden) {
+        if (performance.now() < deadline) raf = requestAnimationFrame(start);
+        else gsap.set(el, { opacity: 1 }); // 超时兜底，别让它一直隐着
+        return;
+      }
+
+      tween = gsap.to(el, {
+        opacity: 1, duration: 0.3, ease: 'power2.out',
+        onComplete: () => updateNodeInternals(id)
+      });
+    };
+
+    raf = requestAnimationFrame(start);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      tween?.kill();
+      // 卸载/重挂时不要留下 opacity: 0（否则 StrictMode 下会真的把节点隐掉）
+      gsap.set(el, { opacity: 1 });
+    };
+  }, [id, updateNodeInternals]);
 
   
   // Debug log for width changes
@@ -78,44 +125,90 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   /*
    * 新建节点后直接把光标放进输入框，不需要用户再点一下。
    *
-   * 上面那个 effect 在挂载时其实已经 focus 过了，但 React Flow 会把每个节点包装成
-   * 可聚焦元素（tabIndex=0）用来支持键盘操作，它的聚焦可能发生在我们之后，
-   * 把光标抢走。所以过一会检查一次并补回。
-   * 用 latch 保证只补一次，并且如果用户已经在别处输入就不抢。
+   * 这里有两个坑，必须同时处理：
+   *
+   * 1) React Flow 在量到节点尺寸之前，会把节点包成 `visibility: hidden`
+   *    （`initialized: !!node.width && !!node.height`）。对隐藏元素调 focus()
+   *    是**静默无效**的 —— 不会报错，也不会触发 focusin。所以不能一挂载就只试一次。
+   *
+   * 2) `autoFocus` 是 ChatFlow 里的一次性标记，节点入图后很快就会被置回 false。
+   *    如果让循环的生死跟着 autoFocus（放在 effect 的 cleanup 里），它会在
+   *    “节点还没变可见”的那一刻被清掉，光标永远等不到。所以循环一旦启动，
+   *    只靠**自己成功 / 超时**停止，卸载时再由单独的 effect 兜底清理。
    */
-  const autoFocusHandled = useRef(false);
-  useEffect(() => {
-    if (!autoFocus || autoFocusHandled.current) return;
-    autoFocusHandled.current = true;
+  const focusLoopRef = useRef<number | null>(null);
 
-    const focusInput = () => {
-      const el = userInputRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
+  useEffect(() => {
+    if (!autoFocus) return;
+    // 只读节点（比如“重新生成”新建的分支：userMessage 已拷贝过来）没有输入框，
+    // 不需要聚焦，也就没必要跑这个循环。
+    if (!isEditingUser) return;
+    if (focusLoopRef.current !== null) return; // 已在跑，别重复启动
+
+    let stopped = false;
+    const stop = () => {
+      stopped = true;
+      if (focusLoopRef.current !== null) {
+        clearInterval(focusLoopRef.current);
+        focusLoopRef.current = null;
+      }
     };
 
-    focusInput();
-    const timer = setTimeout(() => {
-      const active = document.activeElement;
-      // 用户已经在别的输入框里打字了，就别把焦点抢回来
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
-      focusInput();
-    }, 80);
+    const tryFocus = () => {
+      if (stopped) return;
+      const el = userInputRef.current;
+      if (!el) return;
 
-    return () => clearTimeout(timer);
-  }, [autoFocus]);
+      // React Flow 还没量到尺寸：元素隐藏，focus() 是空操作，下一轮再试
+      if (el.offsetParent === null || getComputedStyle(el).visibility === 'hidden') return;
+
+      const active = document.activeElement;
+      if (active === el) { stop(); return; }
+      // 用户已经在别的输入框里打字了，就不要抢
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) { stop(); return; }
+
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+      if (document.activeElement === el) stop();
+    };
+
+    tryFocus();
+    focusLoopRef.current = window.setInterval(tryFocus, 60);
+    // 超时兜底，避免极端情况下的空转
+    window.setTimeout(stop, 4000);
+  }, [autoFocus, isEditingUser]);
+
+  // 卸载时清掉可能还在跑的聚焦循环
+  useEffect(() => () => {
+    if (focusLoopRef.current !== null) {
+      clearInterval(focusLoopRef.current);
+      focusLoopRef.current = null;
+    }
+  }, []);
 
   const handleSubmitUserMessage = () => {
     if (!userMessage.trim()) return;
-    
+
     onEdit(node.id, userMessage, 'user');
-    // setIsEditingUser(false); // 发送后不切换编辑态，输入框内容不变
-    
-    // If there's no AI response yet, trigger one
-    if (!node.assistantMessage && !node.isStreaming) {
+
+    // 发送后退出编辑态。
+    // 不退出的话，节点一直停在「可编辑」样式；切走再切回来时组件重挂载，
+    // isEditingUser 会根据「已有 userMessage」重新算成 false —— 于是同一个节点
+    // 前后样式不一样（像“进入过编辑又退出”），用户会不知道该处于哪种状态。
+    setIsEditingUser(false);
+
+    // 显式点发送 / Ctrl+Enter = 「让这个节点用当前文字重新回答一遍」。
+    //
+    // 用 onResubmit 而不是 onRetry：改了消息就地重出，结果写回本节点，
+    // **不另起分支**。想保留旧答案对照的话，用户自己从父节点拉个新节点就行，
+    // 不在这里替他做决定。（「重新生成」按钮仍走 onRetry，那条才起兄弟分支。）
+    //
+    // 不能再用「内容有没有变」当条件：输入框每次击键都会把草稿写回节点
+    // （onEdit 带 isDraft），所以到点击时 node.userMessage 早已经是新内容，
+    // 比较永远相等 —— 这正是“改成 456 后再点发送毫无反应”的原因。
+    if (!node.isStreaming) {
       setTimeout(() => {
-        onRetry(node.id);
+        onResubmit(node.id);
       }, 100);
     }
   };
@@ -262,16 +355,10 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             <input
               type="range"
               min="256"
-              max="32768"
-              step="256"
+              max="65535"
+              step="1"
               value={node.maxTokens}
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                onMaxTokensChange(node.id, value);
-                if (value % 1024 === 0) { // 只在1024的整数倍时显示通知
-                  showInfo(`最大令牌数设置为: ${value}`);
-                }
-              }}
+              onChange={(e) => onMaxTokensChange(node.id, parseInt(e.target.value))}
               className="w-full accent-neutral-700"
             />
           </div>
@@ -481,12 +568,9 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             <Copy size={14} />
           </button>
           <button 
-            onClick={() => {
-              onRetry(node.id);
-              showInfo('正在重新生成回复...');
-            }} 
+            onClick={() => onRetry(node.id)} 
             className="p-1 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded transition-colors"
-            title="重新生成回复"
+            title="重新生成回复（另起一个新分支，保留当前回答）"
           >
             <RefreshCcw size={14} />
           </button>

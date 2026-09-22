@@ -6,12 +6,13 @@ import { useModelStore } from '../stores/modelStore';
 interface DatabaseContextType {
   loadSessions: () => Promise<void>;
   loadModels: () => Promise<void>;
+  loadFolders: () => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
 
 export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { setSessions } = useSessionStore();
+  const { setSessions, setFolders } = useSessionStore();
   const { setModels } = useModelStore();
 
   const loadSessions = useCallback(async () => {
@@ -23,6 +24,17 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   }, [setSessions]);
 
+  // 文件夹独立加载。即使这里失败，会话照样能显示（都落在「全部」里），
+  // 所以不让它拖垮启动流程。
+  const loadFolders = useCallback(async () => {
+    try {
+      const folders = await db.getAllFolders();
+      setFolders(folders);
+    } catch (error) {
+      console.error('Failed to load folders:', error);
+    }
+  }, [setFolders]);
+
   const loadModels = useCallback(async () => {
     try {
       const models = await db.getAllModels();
@@ -33,7 +45,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [setModels]);
 
   return (
-    <DatabaseContext.Provider value={{ loadSessions, loadModels }}>
+    <DatabaseContext.Provider value={{ loadSessions, loadModels, loadFolders }}>
       {children}
     </DatabaseContext.Provider>
   );

@@ -1,4 +1,4 @@
-import { Session, Model } from '../types';
+import { Session, Model, Folder } from '../types';
 
 /**
  * 会话备份的文件格式。
@@ -17,11 +17,14 @@ export interface SessionExportFile {
   sessions: Session[];
   /** 可选。单会话导出时不带；全部导出时带上，用于保留节点参数（温度/上限等）。 */
   models?: Model[];
+  /** 可选。文件夹表。不带时导入后会话都落在「未分类」。 */
+  folders?: Folder[];
 }
 
 export interface ParsedExportFile {
   sessions: Session[];
   models: Model[];
+  folders: Folder[];
 }
 
 export interface ImportResult {
@@ -35,7 +38,7 @@ export interface ImportResult {
  * apiKey 一律清空 —— 备份文件会在网盘/聊天软件里到处走，不该带着凭据。
  * （顺带一提：Session 本身就不含 key，模型是独立的一张表，所以只有带 models 时才需要处理。）
  */
-export function buildExportFile(sessions: Session[], models?: Model[]): SessionExportFile {
+export function buildExportFile(sessions: Session[], models?: Model[], folders?: Folder[]): SessionExportFile {
   const file: SessionExportFile = {
     format: EXPORT_FORMAT,
     version: EXPORT_VERSION,
@@ -45,6 +48,10 @@ export function buildExportFile(sessions: Session[], models?: Model[]): SessionE
 
   if (models && models.length > 0) {
     file.models = models.map(m => ({ ...m, apiKey: '' }));
+  }
+
+  if (folders && folders.length > 0) {
+    file.folders = folders;
   }
 
   return file;
@@ -72,6 +79,17 @@ export function safeFileName(text: string, fallback = 'session'): string {
     .replace(/\s+/g, '_')
     .trim();
   return cleaned.slice(0, 60) || fallback;
+}
+
+/**
+ * 导出单个会话为 JSON 文件。
+ *
+ * 和「导出全部」共用一套 schema，只是数组里只有一条 ——
+ * 这样单会话文件也能直接丢进任何一台设备的导入框。
+ */
+export function exportSessionToFile(session: Session): void {
+  const file = buildExportFile([session]);
+  downloadJson(`${safeFileName(session.title)}-session.json`, file);
 }
 
 /**
@@ -115,8 +133,9 @@ export function parseExportFile(text: string): { data: ParsedExportFile } | { er
   }
 
   const models = Array.isArray(file.models) ? file.models.filter(isValidModel) : [];
+  const folders = Array.isArray(file.folders) ? file.folders.filter(isValidFolder) : [];
 
-  return { data: { sessions, models } };
+  return { data: { sessions, models, folders } };
 }
 
 function isValidSession(value: unknown): value is Session {
@@ -138,4 +157,10 @@ function isValidModel(value: unknown): value is Model {
     typeof m.baseUrl === 'string' &&
     typeof m.modelName === 'string'
   );
+}
+
+function isValidFolder(value: unknown): value is Folder {
+  if (!value || typeof value !== 'object') return false;
+  const f = value as Partial<Folder>;
+  return typeof f.id === 'string' && typeof f.name === 'string';
 }
