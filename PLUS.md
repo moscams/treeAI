@@ -632,6 +632,7 @@ Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; style-s
 | ~~3 个既有 TS 错误~~ | ✅ 已随重构消失，`npx tsc --noEmit -p tsconfig.app.json` 现在干净 |
 | ~~连线要点击后才出现~~ | ✅ `697d749` |
 | ~~流式输出时闪屏~~ | ✅ `07f036a`（全文共用一个 `MdPreview`，不再两套组件来回切） |
+| **刷新会丢掉正在生成的半截回答** | 回答是生成完才落盘的，`streamingResponses` 只在内存里。本来「加个停止生成按钮」能绕开，但那个**明确不做**，所以刷新就是唯一的逃生门。补法是流式过程中节流落盘（每 500ms / 每 200 字），见 `todo.md` |
 
 > 上面那几条划线项原来是 `HANDOFF.md` 里的待办。`HANDOFF.md` 保留的是
 > **定位过程**（怎么从 React Flow 源码推到根因），仍然值得一读；
@@ -682,6 +683,11 @@ npm run build                           # 打包
   `BUN_VERSION`，CF 默认走 npm/Node
 - 没有 react-router，是纯 SPA，**不需要 `_redirects`**
 - `vite.config.ts` 没有设 `base`，部署在根路径下开箱可用
+- **桌面版（规划中，未实现）**：方向是用 [Pake](https://github.com/tw93/Pake)
+  把 `dist/` 打成 Tauri 壳的 exe（Tauri + 系统 WebView，通常 < 10 MB）。
+  完整的调研、3 个前置坑、验收清单和 CI 设计都在 **`todo.md`**。
+  ⚠️ 桌面壳的 origin 和浏览器不同，**IndexedDB 不会跟过去，API Key 要重填** ——
+  迁移只能做一次，越晚定越贵
 
 ### 自持要点
 
@@ -693,6 +699,7 @@ npm run build                           # 打包
 | `http://localhost:5175` | ✅ |
 | `https://...` | ✅ |
 | `http://192.168.x.x` | ❌ **新建会话 / 节点 / 模型全部失败** |
+| `tauri://localhost`（桌面壳） | ❓ **待实测**（Pake 试手感的第一项，会一票否决） |
 
 自持时用自签证书 / Caddy / Cloudflare Tunnel 都可以。IndexedDB 本身不要求安全上下文。
 

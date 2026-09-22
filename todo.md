@@ -319,10 +319,164 @@
      Vite 读到半截内容并缓存。加 `server.watch.awaitWriteFinish`
      （`stabilityThreshold: 300`）等 size 稳定后再读，从根上防住。
 
+## 本轮（第 12 轮）：只讨论了，没动代码
+
+给了一版「使用向」的建议清单（8 条 + 一个流程建议 + 一份「明确别做」），逐条拍板：
+
+| # | 建议 | 决策 |
+|---|---|---|
+| 1 | 停止生成按钮 | **不做** |
+| 2 | 删节点二次确认 + 可撤销 | ✅ **要做**（用户：「没问题且很关键」） |
+| 3 | 长回答的阅读覆盖层（双击放大） | ✅ **要做** |
+| 4 | 兄弟分支切换器（`← 2/3 →`） | **不做** |
+| 5 | 复制「根 → 本节点」整条对话为 Markdown | 不急 |
+| 6 | 子树折叠 | 不急 |
+| 7 | 快捷键补齐 | 不急 |
+| 8 | 跨会话 token / 花费累计 | 有趣，候选 |
+| C | 标签 / 云同步 / 插件化 / 移动端 / mermaid / 继续美化 | **全部拒绝** |
+
+> 第 1、4 条和 C 那批都是**明确否决**，别下次又当成新点子提出来。
+> 第 1 条的理由是主观选择（他自己就是不想中途停），不是判断错误。
+
+### 2 和 3 的设计要点（先记下来，免得动手时又要重想）
+
+- **2（删除保护）**：`deleteNodeFromSession` 是**递归连子节点一起删**的，而节点上那个
+  删除按钮**没有任何确认**（全项目只有「删模型」「删文件夹」有 `confirm`）。
+  两层做法：便宜版 = confirm + 文案里写清「会连带删掉 N 个子节点」；
+  正确版 = 软删除 + 撤销（`updateSession` 本来就是整个 nodes 数组写进 IndexedDB，
+  撤销只需把旧数组放回去）。
+- **3（阅读覆盖层）**：`.node-content` 是 `width: 644px; max-height: 760px; overflow: hidden`，
+  读长回答要在一个比手机还小的窗口里滚。双击节点（或 `Space`）开一个只读覆盖层，
+  只渲染这一个节点的提问 + 回答，`Esc` 关。**不动布局、不动数据**，一个组件 + 一个快捷键。
+  以后第 5 条的「复制整条路径」和第 4 条的「并排对比」都可以挂在这个覆盖层上。
+
+### 有一条我提了、但没有答复的
+
+**流式过程中的回答应该节流落盘。** 「停止生成」既然不做，刷新就是唯一的逃生门 ——
+而现在刷新会丢掉已经生成的那半截（`streamingResponses` 只在内存里，
+回答是生成完了才落盘的）。这可能不是新功能，是给现有路径补漏：
+每 500ms 或每 200 字写一次。不算拍板，先记着。
+
 ## 待讨论
 
 - **标签（tags）**：多对多、可跨维度筛选，但要配标签管理 UI。会话量上百之后再考虑；
   单层文件夹 + 星标已经够用，两者不冲突。
 - **文件夹拖拽在触屏上不可用**（HTML5 DnD 的限制）。桌面为主的场景可接受，
   移动端将来需要补一个「移动到…」菜单作为兜底（目前其实已有行内菜单，触屏也能点）。
+
+---
+
+## 待办：桌面版（Pake）—— 今天不做
+
+用户提的方向：**要一个 exe**（「有个 exe 或许会很舒服」）。先试手感，手感过了再写 CI。
+下面这些是做过的调研，**已经查过的东西别再重查一遍**。
+
+### 为什么是 Pake（依据，不是凭记忆）
+
+拉的是 `pake-cli@3.17.1` 的真实 `llms.txt` 和 CLI 参数（不是搜来的印象）：
+
+| 事实 | 内容 |
+|---|---|
+| 打包本地目录 | ✅ `pake ./dist --name MyTool`，目录根部必须有 `index.html` |
+| 路由限制 | **只支持 hash 路由，history 模式不支持** —— 对本项目**零影响**，我们根本没装 router |
+| 体积 | Tauri + 系统 WebView，**通常 < 10 MB** |
+| 版本号 | 有 `--app-version` |
+| 自动化 | 有 `--config app.json`（camelCase 字段 + `url`）、`--json`（stdout 只输出一个 JSON）、退出码 `0/2/3/4` |
+| 许可 | **GPL-3.0 + Output Exception**：build 出来的 app 完全归你，不传染 |
+
+> 为什么不用 PWA（Edge「安装为应用」）：那个需要**一个常驻的服务器**（dev server 常驻、
+> 或托管到线上），直接和「完全离线自持、内网可跑」冲突。**exe 才是这个项目正确的形态。**
+
+### ⚠️ 比手感更致命的前置问题：origin 会变
+
+Tauri 的 WebView 用自己的本地 protocol（Windows 上大概是 `https://tauri.localhost`）。
+**它和 `http://127.0.0.1:5175` 是两个不同的 origin**，而 IndexedDB 按 origin 隔离。
+
+后果：**会话 / 模型 / API Key 全部不会跟过去。** 迁移一次的动作：
+
+1. 老 origin（浏览器）导出 JSON
+2. 新 origin（exe）导入
+3. **API Key 要重填** —— 当初刻意定的「密钥不进备份」的规矩，这里要还账
+4. 从此 exe 是主力，浏览器版降级为开发环境
+
+→ 真实代价不是 Rust 工具链，是**「挑一个永久 origin，且只迁一次」**。
+越晚定越贵。
+
+### 上 CI 之前必须先修的 3 个坑
+
+1. **版本号现在有两个来源，会直接毁掉自动打 tag。**
+   `AboutPanel.tsx` 里是 `const APP_VERSION = '0.1.0'` 手写的。
+   当初「不 import JSON」的理由是对的（不想把 package.json 打进产物），
+   用 Vite 的 `define` 绕开这个担心：构建期字符串替换，不产生运行时开销。
+   ```ts
+   // vite.config.ts
+   import { readFileSync } from 'node:fs';
+   const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
+   define: { __APP_VERSION__: JSON.stringify(pkg.version) }
+   ```
+   一个数字喂三处：**About 页 / exe 属性（`--app-version`）/ git tag**。
+2. **图标格式**。Windows 的 exe 要 **ICO**、Tauri 要 **PNG**，而我们只有 `favicon.svg`。
+   需要一个 512×512 PNG + 多尺寸 ICO 的生成步骤（一次性，之后进 CI）。
+3. **`--enable-drag-drop` 不是默认开的**。WebView2 里 HTML5 拖放默认被关，
+   而「会话拖进文件夹」是用户点名「很关键」的功能。同类还有 `--disabled-web-shortcuts`，
+   因为 WebView 默认会抢 `Ctrl+滚轮`（我们专门把它让给了画布缩放）。
+
+### 试手感：一条命令 + 一张验收清单
+
+**不要先写 CI。** CI 是「把已经跑通的东西自动化」，不是探索工具。先手动出个 exe：
+
+```bash
+npm run build
+npx pake-cli ./dist --name "Tree AI Plus" \
+  --app-version 0.1.0 \
+  --icon ./build/icon.ico \
+  --enable-drag-drop --json
+```
+
+第一次要装 Rust，慢（十分钟级），后面快。按「会一票否决」的顺序验：
+
+| # | 验什么 | 为什么排这个位置 |
+|---|---|---|
+| 1 | **`crypto.randomUUID()` 能用吗** | 新建会话 / 加节点 / 建模型 各点一次。它要求安全上下文，Tauri 的自定义 protocol **理论上**算安全，但**必须实测** —— 不成立的话整个 app 在桌面壳里直接死 |
+| 2 | 关掉再打开，数据还在吗 | IndexedDB 在 WebView2 里的持久化 |
+| 3 | 剪贴板复制 | 同样要安全上下文 + 用户手势 |
+| 4 | 会话拖进文件夹 | 不行就加 `--enable-drag-drop` |
+| 5 | `Ctrl+滚轮` | WebView 可能抢走；要 `--disabled-web-shortcuts` |
+| 6 | 窗口能不能拖 | 用 `--hide-title-bar` 就没标题栏，得靠应用自己的头部当拖拽区（要注入 `data-tauri-drag-region`） |
+| 7 | 系统主题 / 字体 / 滚动条 | 观感，不致命 |
+
+### CI 设计（方案，未实现）
+
+单独一个 `release.yml`，不动现有的 `ci.yml`（PR 上保持快）。
+
+```
+触发：push 到 master
+  1. 读 package.json 的 version
+  2. tag v$VERSION 已存在？ → 直接退出（幂等，重跑不会重复发版）
+  3. 不存在 → npm ci && npm run build
+  4. windows-latest + rust-cache 上跑 npx pake-cli
+  5. 建 tag v$VERSION + 建 Release
+  6. 上传产物：exe/msi + dist.zip（网页版顺手也挂上去，方便部署 CF Pages）
+```
+
+几个刻意的选择：
+
+- **「版本变了吗」就用「`v$VERSION` 这个 tag 存不存在」判断**，不引入额外状态文件。
+  改版本号 = 一次普通提交，push 就发版；重跑自然幂等。
+- **只跑 Windows**。macOS runner 分钟数 ×10 计费，Linux 免费但用不上。
+- **用 `--json` + 退出码**，失败能拿到 `error.hint`，不用猜日志。
+- **签名先不做**。不签的后果是首次运行弹 SmartScreen「未知发布者」，
+  点「更多信息 → 仍要运行」就行。个人工具可接受；真要签是另一笔钱和另一套流程。
+
+### 待拍板的 6 件事
+
+1. **exe 形态**：便携版（免安装免管理员）还是安装版（msi）？倾向**两个都出**，便携版为主
+2. **数据迁移**：确认接受「导出 JSON → 重填 API Key → 导入」，且桌面版从此是主力 origin？
+3. **窗口形态**：第一轮用**原生标题栏**，无边框留第二轮 —— 同意吗？
+4. **更新方式**：每次改代码都要重装 exe。要不要留「热更新」后门？
+   倾向**先不做**，重装就重装
+5. **范围**：只 Windows，还是三平台？倾向只 Windows
+6. **仓库结构**：用 CLI 方式（仓库里**不出现 Rust**，只有一个 `pake.config.json` + 一个 CI job），
+   还是把 `src-tauri/` 提交进仓库（可深度定制，但要维护一个 Rust crate，还要 gitignore 掉
+   巨大的 `target/`）？**强推前者**
 
