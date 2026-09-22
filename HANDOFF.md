@@ -1,23 +1,37 @@
 # HANDOFF
 
-写给明天的自己。写于 `e063480`（`master` 已同步到这个提交）。
+写给明天的自己。写于 `e063480`（当时 `master` 的头部）。
 
-> **先读第 1 节和第 2 节。** 那是两个**还没解决**的问题，而且第 1 节里我上一轮的
-> 修复是**错的**，下面写清楚了为什么错 —— 别再犯一次。
+> ## ✅ 后续状态：第 1、2 节**都已经修好了**
+>
+> 这份文档的价值现在是**定位过程** —— 怎么从 React Flow / md-editor 的源码
+> 一步步推到根因的。结论已落地：
+>
+> | 问题 | 修掉的提交 | 最终做法 |
+> |---|---|---|
+> | 连线要点击后才出现 | `697d749` | 入场动画改成**只做 opacity**。根因不是尺寸丢了，是动画的 `transform` 污染了 handle 的测量基准（详见下方「上一轮为什么错」） |
+> | 流式输出时闪屏 | `07f036a` | 全文只用一个 `MdPreview`（不再两套组件来回切）+ 节点对象引用复用 |
+>
+> 之后又做了 9 个提交（文件夹 / 设置中心 / i18n / XSS / 视口 / 新人引导等），
+> 完整清单看 **[PLUS.md](PLUS.md)** —— 那里才是当前的事实来源。
+>
+> 另外：**XSS 已经不是「按明确决定未修改」了**，`6ee2678` 发现它是真实可利用的
+> （密钥就在同源 IndexedDB），最终在 `07f036a` 用 `markdownItConfig: md => md.set({html: false})`
+> 从源头堵上。本文件如果和 PLUS.md 冲突，以 PLUS.md 为准。
 
 ---
 
-## 0. 现状一句话
+## 0. 现状一句话（写于 `e063480`，已过期，保留上下文）
 
-18 个提交，`master` 和 `feat/deepseek-v4-reasoning` 都指向 `e063480`，已推送。
+18 个提交，`master` 和 `feat/deepseek-v4-reasoning` 都指向 `e063480`。
 功能基本齐了（DeepSeek V4 / 思考链 / 暗色 / 统计 / JSON 备份 / 全离线），
-**剩两个可见缺陷**：连线要点击后才完整、流式输出时闪屏。
+当时**剩两个可见缺陷**：连线要点击后才完整、流式输出时闪屏。
 
-两个都有**高置信度根因**，都在下面附了现成补丁。
+两个都有**高置信度根因**，下面附了当时的推理过程。
 
 ---
 
-## 1. 🔴 未解决：连线要点击或拖动后才出现
+## 1. ✅ 已解决（`697d749`）：连线要点击或拖动后才出现
 
 ### 现象
 
@@ -145,6 +159,29 @@ case 'dimensions': {
 
 > 教训：**别再用「读了源码觉得对」就宣布修好。** 这类问题必须先用脚本复刻契约跑一遍。
 
+---
+
+#### ⚠️ 事后修正：真正的根因不是尺寸，是入场动画的 `transform`
+
+上面的推理（尺寸被抹掉）**确实是一个真 bug**，而且 `flowNodesRef` 那版就是最终采用的写法。
+但它**并不是「连线要点击后才出现」的主因** —— 真正的原因是：
+
+1. 我们给新节点加了一个 GSAP **入场动画**，动画里动了 `transform`。
+2. React Flow 的 handle 位置是从**节点元素的几何**上量出来的（`getHandleBounds`）。
+3. 「代理元素 / 元素自己带着 transform」会让测量基准偏移，于是边被画到了错的位置
+   —— 动画结束后不再有 transform，测量恢复正确，看上去就是「点一下 / 等一下就接上了」。
+
+**最终修法：入场动画只做 `opacity`，绝不碰 `transform`。**
+另外把淡入改成「轮询到 `visibility` 不再是 hidden 才开始」，
+顺便治好了「新节点入场动画偶尔不播」。
+
+真正把这件事钉死的是 `scripts/edge-contract-check.mjs`：
+它在**动画进行中**（60ms 处）量边的端点与节点上沿的偏差，
+回归阈值卡在 3px（修之前是 **17.1px**）。
+
+> 双保险：尺寸那份也没白查 —— 不保住 `width/height`，
+> `getNodeData().isValid` 就是 false，边会**整条**不渲染。两个坑都真实存在。
+
 ### 浏览器侧怎么确认（30 秒）
 
 1. 硬刷新
@@ -157,7 +194,7 @@ case 'dimensions': {
 
 ---
 
-## 2. 🟡 未解决：流式输出时闪屏
+## 2. ✅ 已解决（`07f036a`）：流式输出时闪屏
 
 ### 现象
 
@@ -268,15 +305,19 @@ bun run lint
 bunx tsc --noEmit -p tsconfig.app.json
 ```
 
-### 基线：3 个既有 TS 错误（**故意的，不是我们弄坏的**）
+### 基线：那 3 个既有 TS 错误（✅ 已清零）
+
+当时记录的基线是：
 
 ```
-src/components/ChatFlow.tsx(...)    TS6133  'event' 声明未使用
-src/components/nodes/ChatNode.tsx(..)  TS2554  onEdit 传了 4 个参数，类型是 3 个
-src/components/nodes/ChatNode.tsx(..)  TS2554  同上
+src/components/ChatFlow.tsx(...)      TS6133  'event' 声明未使用
+src/components/nodes/ChatNode.tsx(..) TS2554  onEdit 传了 4 个参数，类型是 3 个
+src/components/nodes/ChatNode.tsx(..) TS2554  同上
 ```
 
-行号会随编辑漂移，**只要还是这 3 条就没事**。
+三条都已经在重构里顺手改掉了（`onEdit` 的 `isDraft` 参数补进了类型声明），
+`npx tsc --noEmit -p tsconfig.app.json` 现在是 **0 错误**。
+所以体检命令里不再需要「容忍这 3 条」。
 
 ### 🕳️ 踩坑清单
 
@@ -297,6 +338,12 @@ for f in $(find src -name '*.tsx' -o -name '*.ts' | grep -v vite-env | grep -v '
   n=$(curl -s --noproxy '*' "http://127.0.0.1:5175/$f" | wc -c)
   [ "$n" -lt 100 ] && echo "❌ $f ${n}字节"
 done; echo "体检完成"
+```
+
+现在更好的选择是直接跑项目自带的那套（比去浏览器里肉眼点点点靠谱得多）：
+
+```bash
+npx tsc --noEmit -p tsconfig.app.json && npm run lint && node scripts/smoke-check.mjs
 ```
 
 ---
