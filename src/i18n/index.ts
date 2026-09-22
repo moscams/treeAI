@@ -89,6 +89,8 @@ const en: Record<string, string> = {
   节点已删除: 'Node deleted',
   消息已保存: 'Message saved',
   '在此输入您的消息...': 'Type your message...',
+  '点击添加消息...': 'Click to add message...',
+  'AI 正在思考...': 'AI is thinking...',
   '思考过程 · {n} 字': 'Reasoning · {n} chars',
   '思考中…': 'Thinking…',
   '请求失败，可重试': 'Request failed — you can retry',

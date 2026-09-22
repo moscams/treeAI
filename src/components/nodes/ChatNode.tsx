@@ -423,13 +423,13 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
               className="pr-8 max-h-[200px] min-h-[80px] overflow-auto text-[19px] leading-relaxed whitespace-pre-wrap"
               onClick={() => setIsEditingUser(true)}
             >
-              {node.userMessage || <span className="text-gray-400 italic">Click to add message...</span>}
+              {node.userMessage || <span className="text-neutral-400 italic">{t('点击添加消息...')}</span>}
             </div>
             <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
-                className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+                className="p-1 rounded text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors"
                 onClick={() => handleCopyToClipboard(node.userMessage)}
-                title="Copy"
+                title={t('复制到剪贴板')}
               >
                 <Copy size={14} />
               </button>
@@ -445,8 +445,8 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         }}
       >
         {node.isStreaming ? (
-          <div className="flex items-center space-x-2 text-gray-500 mb-2">
-            <div className="animate-pulse">AI is thinking...</div>
+          <div className="flex items-center space-x-2 text-neutral-500 mb-2">
+            <div className="animate-pulse">{t('AI 正在思考...')}</div>
             <div className="animate-bounce delay-100">.</div>
             <div className="animate-bounce delay-200">.</div>
             <div className="animate-bounce delay-300">.</div>
@@ -562,12 +562,15 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       {/* 右下角悬浮的复制 / 重试：
           - 绝对定位（在 .node-content 之外，不参与布局），不占高度；
           - 悬停整个节点才出现（外层 wrapper 加了 group），平时不挡正文；
-          - 没回答时不显示复制（复制不出东西），但重试留着 —— 报错后就靠它。 */}
+          - 没回答时不显示复制（复制不出东西），但重试留着 —— 报错后就靠它。
+          - 样式和「提问」右上角那个复制按钮、以及头部的节点工具栏完全一致：
+            无永久底色，只用 hover 反馈。别写 `bg-white/90` —— 它绕过了
+            `html.dark .bg-white` 覆盖，夜里会变成一块亮白药丸。 */}
       {!node.isStreaming && (
-        <div className="absolute bottom-2 right-2 z-10 flex items-center gap-0.5 rounded-md border border-neutral-100 bg-white/90 px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+        <div className="absolute bottom-2 right-2 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           {hasAnswer && (
             <button
-              className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+              className="p-1 rounded text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors"
               onClick={() => handleCopyToClipboard(node.assistantMessage)}
               title={t('复制到剪贴板')}
             >
@@ -575,7 +578,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             </button>
           )}
           <button
-            className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+            className="p-1 rounded text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 transition-colors"
             onClick={() => onRetry(node.id)}
             title={t('重新生成回复（另起一个新分支，保留当前回答）')}
           >
