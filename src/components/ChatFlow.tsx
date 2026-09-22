@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -46,13 +46,101 @@ const V_GAP = 140;
  * 跨会话保留的视口（平移 + 缩放），**按会话分开存**。
  *
  * 切换会话时 ReactFlowWrapper 会被 key 重建，视口会重置回 defaultViewport。
- * 两个理由让它必须 per-session、而且必须连平移一起记：
+ * 三个理由让它必须 per-session、而且必须连平移一起记：
  *   1) 只记缩放、切回来平移归零时，节点若长在离原点很远处，屏幕就是一片空白；
- *   2) 每个会话的树形状不同，A 图的视角对 B 图没意义。
- * 用模块级 Map 存（不是组件 state，重建后 state 也没了）。
+ *   2) 每个会话的树形状不同，A 图的视角对 B 图没意义；
+ *   3) 刷新页面后还得在（用户反馈「一刷新就没了」），所以落 localStorage。
+ * 用模块级 Map 当内存缓存（不是组件 state —— 重建后 state 也没了）。
  */
 type SavedViewport = { x: number; y: number; zoom: number };
-const savedViewports = new Map<string, SavedViewport>();
+
+const VIEWPORT_STORAGE_KEY = 'treeai-viewports';
+// 最多记这么多个会话，超了就丢最久没碰过的。Map 的插入顺序就是最近使用顺序。
+const VIEWPORT_LIMIT = 80;
+
+function readStoredViewports(): [string, SavedViewport][] {
+  try {
+    const raw = localStorage.getItem(VIEWPORT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return [];
+    return Object.entries(parsed as Record<string, SavedViewport>).filter(
+      ([, v]) =>
+        !!v && typeof v.x === 'number' && typeof v.y === 'number' && typeof v.zoom === 'number'
+    );
+  } catch {
+    // 存的东西坏了 / 无痕模式读不到：当作没存过，别让整页挂掉
+    return [];
+  }
+}
+
+const savedViewports = new Map<string, SavedViewport>(readStoredViewports());
+
+// 平移时每一帧都会喊一次，攒一攒再落盘，不然每帧都要 stringify 整张表
+let viewportFlushHandle: number | null = null;
+
+function rememberViewport(sessionId: string, viewport: SavedViewport) {
+  // 先删再塞，把这一项挪到 Map 末尾 —— 等于盖一个「刚刚用过」的戳
+  savedViewports.delete(sessionId);
+  savedViewports.set(sessionId, viewport);
+  while (savedViewports.size > VIEWPORT_LIMIT) {
+    const oldest = savedViewports.keys().next().value;
+    if (oldest === undefined) break;
+    savedViewports.delete(oldest);
+  }
+  if (viewportFlushHandle !== null) return;
+  viewportFlushHandle = window.setTimeout(() => {
+    viewportFlushHandle = null;
+    try {
+      localStorage.setItem(
+        VIEWPORT_STORAGE_KEY,
+        JSON.stringify(Object.fromEntries(savedViewports))
+      );
+    } catch {
+      // 配额满 / 无痕模式：落盘失败不影响本次使用
+    }
+  }, 300);
+}
+
+/*
+ * 首次进入某个会话（还没存过视口）时的落点。
+ *
+ * 直接把世界坐标 x = 0 对到画板中点是不够的：新建会话时根节点存的位置是
+ * {0, 0}，而走 calculateNodeLayout 排过的树又会被摆在 -rootWidth / 2，两种世界的
+ * 原点并不都落在中线上。所以这里直接量**内容包围盒**，把它的中心对到画板水平
+ * 中点 —— 布局本身关于根节点中线是对称的，因此「包围盒中心」就是那条中线。
+ *
+ * y 用 HOME_TOP_MARGIN - minY：不管是 0 还是排过（正数）的起点，最上面那个
+ * 节点离画板顶都是这个边距，不会顶到天花板。
+ */
+const HOME_TOP_MARGIN = 56;
+
+function homeViewport(paneWidth: number, nodes: ChatNodeType[]): SavedViewport {
+  // 空会话也别等到节点到位再算：新建的会话马上会被自动补一个根节点，
+  // 而它没有 position（resolveNodePosition 会退回 {0,0}），所以先按「原点上一个
+  // 根节点」估。这样首帧和节点到位后是同一个视角，不会跳。
+  let minX = 0;
+  let maxX = NODE_WIDTH;
+  let minY = 0;
+
+  if (nodes.length > 0) {
+    minX = Infinity;
+    maxX = -Infinity;
+    minY = Infinity;
+    nodes.forEach(node => {
+      const p = node.position ?? resolveNodePosition(node, nodes);
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x + NODE_WIDTH);
+      minY = Math.min(minY, p.y);
+    });
+  }
+
+  return {
+    x: paneWidth / 2 - (minX + maxX) / 2,
+    y: HOME_TOP_MARGIN - minY,
+    zoom: 1,
+  };
+}
 
 /**
  * 节点的有效坐标。
@@ -144,11 +232,27 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const store = useStoreApi();
   useEffect(() => {
     const write = (s: { transform: [number, number, number] }) => {
-      savedViewports.set(sessionId, { x: s.transform[0], y: s.transform[1], zoom: s.transform[2] });
+      rememberViewport(sessionId, { x: s.transform[0], y: s.transform[1], zoom: s.transform[2] });
     };
     const unsub = store.subscribe(write);
     return unsub;
   }, [sessionId, store]);
+
+  // 画板容器，用来量宽度、算「中线居中」的初始视口
+  const paneRef = useRef<HTMLDivElement>(null);
+  // 本次进入会话用的初始视口：存过就用存的；没存过就等量到容器宽度后再按内容包围盒算。
+  // 算出来之前先不挂 <ReactFlow> —— defaultViewport 只在初始化那一刻读一次
+  // （ZoomPane 里那个 useEffect 的依赖是 []），先用占位值挂上去的话会先按错的
+  // 位置摆一帧，再跳一下。
+  const [initialViewport, setInitialViewport] = useState<SavedViewport | undefined>(() =>
+    savedViewports.get(sessionId)
+  );
+
+  useLayoutEffect(() => {
+    if (initialViewport) return;
+    const width = paneRef.current?.clientWidth || window.innerWidth / 2;
+    setInitialViewport(homeViewport(width, session?.nodes ?? []));
+  }, [initialViewport, session?.nodes]);
   const abortControllerRef = useRef<Record<string, AbortController>>({});
   const [nodeDimensions, setNodeDimensions] = useState<Record<string, { width: number, height: number }>>({});
   // 刚新建的节点 id。渲染完成后把它平移到视野中间，否则可能落在屏幕外面。
@@ -908,8 +1012,14 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     return <div>Session not found</div>;
   }
 
+  // 还没算出初始视口（首次进这个会话且没存过）：先摆一个空容器把宽度量到手。
+  // useLayoutEffect 里 setState 会在浏览器绘制前同步重渲染，所以看不到空画板。
+  if (!initialViewport) {
+    return <div ref={paneRef} className="h-full w-full relative" />;
+  }
+
   return (
-    <div className="h-full w-full relative">
+    <div ref={paneRef} className="h-full w-full relative">
       <div className="absolute top-4 right-4 z-10 flex space-x-3">
         <button 
           className="flex items-center justify-center p-2 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
@@ -942,7 +1052,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        defaultViewport={savedViewports.get(sessionId) ?? { x: 0, y: 0, zoom: 1 }}
+        defaultViewport={initialViewport}
         minZoom={0.2}
         maxZoom={2}
         attributionPosition="bottom-left"
