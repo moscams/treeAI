@@ -3,7 +3,28 @@ import { GripVertical, Plus, Save, Trash2, Star } from 'lucide-react';
 import { useModelStore } from '../../stores/modelStore';
 import { Model, ReasoningEffort } from '../../types';
 import { REASONING_EFFORT_OPTIONS, resolveReasoningEffort } from '../../utils/reasoningEffort';
+import {
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_TEMPERATURE,
+  MAX_TOKENS_LIMIT,
+} from '../../utils/modelDefaults';
 import { useT } from '../../i18n';
+
+/**
+ * 思考强度说明。**跟着当前选中的档位走**。
+ *
+ * 以前这里写死一句「DeepSeek V4 起 thinking 默认开启……聊天场景建议 low」——
+ * 选了 high 的人看到的还是一句「建议 low」，自己跟自己矛盾，不如按档位说清楚
+ * 这一档到底换来什么。
+ */
+const EFFORT_HINTS: Record<ReasoningEffort, string> = {
+  default: '不发送 reasoning_effort，交给服务端默认行为，不确定就选这个。',
+  none: '不思考，最快最省 token，适合闲聊、翻译、改写。',
+  low: '思考量小，响应快、便宜，日常聊天够用。',
+  high: '先想得更深再回答，效果更好，适合复杂推理、代码和长文。',
+  max: '思考预算拉满，效果上限最高，也最慢最贵，留给真正难的问题。',
+};
 
 /**
  * 模型配置面板。
@@ -46,10 +67,10 @@ const ModelsPanel: React.FC = () => {
       name: 'DeepSeek',
       baseUrl: 'https://api.deepseek.com',
       apiKey: '',
-      modelName: 'deepseek-v4-pro',
-      defaultSystemPrompt: 'You are a helpful assistant.',
-      maxTokens: 32768,
-      temperature: 0.7
+      modelName: 'deepseek-v4-flash',
+      defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+      maxTokens: DEFAULT_MAX_TOKENS,
+      temperature: DEFAULT_TEMPERATURE
     };
 
     setEditingModel(newModel);
@@ -230,7 +251,7 @@ const ModelsPanel: React.FC = () => {
                 ))}
               </select>
               <p className="mt-1 text-xs text-neutral-400">
-                {t('DeepSeek V4 起 thinking 默认开启且 effort=high。聊天场景建议 low：思考量小、响应快、输出 token 便宜。')}
+                {t(EFFORT_HINTS[editingModel.reasoningEffort ?? resolveReasoningEffort(editingModel)])}
               </p>
             </div>
 
@@ -242,7 +263,7 @@ const ModelsPanel: React.FC = () => {
                 value={editingModel.defaultSystemPrompt}
                 onChange={(e) => setEditingModel({ ...editingModel, defaultSystemPrompt: e.target.value })}
                 className="w-full p-2 border border-neutral-200 rounded-md h-32 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400"
-                placeholder={t('留空则不发送 system 消息 —— 这是合法请求，大多数模型不带系统提示词也能正常对话')}
+                placeholder={t('留空则不发送 system 消息')}
               />
             </div>
 
@@ -275,7 +296,7 @@ const ModelsPanel: React.FC = () => {
                 <input
                   type="range"
                   min="256"
-                  max="65535"
+                  max={MAX_TOKENS_LIMIT}
                   step="1"
                   value={editingModel.maxTokens}
                   onChange={(e) => setEditingModel({ ...editingModel, maxTokens: parseInt(e.target.value) })}

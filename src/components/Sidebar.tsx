@@ -8,6 +8,7 @@ import Logo from './Logo';
 import { gsap } from 'gsap';
 import { showSuccess, showWarning, showInfo } from '../utils/notification';
 import { useThemeStore } from '../stores/themeStore';
+import { useModelStore } from '../stores/modelStore';
 import { DEFAULT_SESSION_TITLE } from '../utils/sessionTitle';
 import type { SettingsTab } from './SettingsModal';
 import { useT } from '../i18n';
@@ -43,6 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
   } = useSessionStore();
 
   const { theme, toggleTheme } = useThemeStore();
+  const { models } = useModelStore();
   const t = useT();
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -100,6 +102,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
   }, [moveMenu]);
 
   const handleCreateSession = () => {
+    // 一个模型都没有就先别建会话：建出来只会是个空画板（画布上一个节点都没有），
+    // 新人看到白屏完全不知道下一步该干嘛。直接把他送到「设置 → 模型」。
+    // 和 App 欢迎页那个按钮保持同一套行为。
+    if (models.length === 0) {
+      showInfo(t('先添加一个模型，再开始对话。'));
+      onOpenSettings('models');
+      return;
+    }
+
     // 当前正停在某个文件夹里新建，就直接归进去，省一次拖动
     const folderId =
       currentFolderView !== 'all' && currentFolderView !== 'uncategorized'

@@ -20,11 +20,12 @@ import { useThemeStore } from '../stores/themeStore';
 import { ChatNode as ChatNodeType, NodeData, UsageStats } from '../types';
 import { useT } from '../i18n';
 import { sendChatRequest } from '../services/apiService';
-import { Share2, LayoutGrid, FileJson, BarChart3 } from 'lucide-react';
+import { Share2, LayoutGrid, FileJson, BarChart3, Settings } from 'lucide-react';
 import { exportToMindmap } from '../utils/exportUtils';
 import { exportSessionToFile } from '../utils/sessionTransfer';
 import { showSuccess, showError, showInfo } from '../utils/notification';
 import { deriveSessionTitle } from '../utils/sessionTitle';
+import { DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE } from '../utils/modelDefaults';
 
 /*
  * 画布布局常量。
@@ -207,9 +208,11 @@ const nodeTypes = {
 
 interface ChatFlowProps {
   sessionId: string;
+  /** 没有可用模型时的空状态按钮用得上，从 App 透传 */
+  onOpenSettings: () => void;
 }
 
-const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
+const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId, onOpenSettings }) => {
   const { sessions, addNodeToSession, updateNodeInSession, replaceSessionNodes, deleteNodeFromSession, autoTitleSession } = useSessionStore();
   const { models, defaultModelId } = useModelStore();
   const { theme } = useThemeStore();
@@ -507,8 +510,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       userMessage: "",
       assistantMessage: "",
       modelId: parentNode.modelId || defaultModelId,
-      temperature: parentNode.temperature || 0.7,
-      maxTokens: parentNode.maxTokens || 8192,
+      temperature: parentNode.temperature || DEFAULT_TEMPERATURE,
+      maxTokens: parentNode.maxTokens || DEFAULT_MAX_TOKENS,
       createdAt: new Date().toISOString(),
       position: computeChildPosition(parentId)
     };
@@ -907,8 +910,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         userMessage: initialModel.defaultSystemPrompt,
         assistantMessage: "",
         modelId: initialModel.id,
-        temperature: initialModel.temperature ?? 0.7,
-        maxTokens: initialModel.maxTokens || 8192,
+        temperature: initialModel.temperature ?? DEFAULT_TEMPERATURE,
+        maxTokens: initialModel.maxTokens || DEFAULT_MAX_TOKENS,
         createdAt: new Date().toISOString(),
       };
       
@@ -1088,6 +1091,25 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         <Background color={theme === 'dark' ? '#2f2f2f' : '#f5f5f5'} gap={18} size={0.5} />
         <Controls className="bg-white border border-neutral-200 rounded-md shadow-minimal" />
       </ReactFlow>
+
+      {/* 一个模型都没有时，画板是彻底空的 —— 新人第一眼看到白屏完全不知道干嘛。
+          这里直接把「去哪配」摊在面前。正常路径上 Sidebar 根本不会让他建出这种空会话，
+          这是兜底：以前建的空会话、或者把最后一个模型删了。 */}
+      {models.length === 0 && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center">
+          <div className="max-w-sm rounded-lg border border-neutral-100 bg-white p-6 text-center shadow-subtle">
+            <h3 className="mb-2 text-base font-medium text-neutral-800">{t('还没有可用的模型')}</h3>
+            <p className="mb-4 text-sm text-neutral-500">{t('先添加一个模型，再开始对话。')}</p>
+            <button
+              className="inline-flex items-center space-x-2 rounded-md bg-neutral-900 px-4 py-2 text-sm text-white transition-colors hover:bg-neutral-800"
+              onClick={onOpenSettings}
+            >
+              <Settings size={14} />
+              <span>{t('去设置模型')}</span>
+            </button>
+          </div>
+        </div>
+      )}
       
       <div className="absolute bottom-4 right-4 z-10">
         <button 
@@ -1102,9 +1124,9 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   );
 };
 
-const ChatFlow: React.FC<ChatFlowProps> = ({ sessionId }) => (
+const ChatFlow: React.FC<ChatFlowProps> = ({ sessionId, onOpenSettings }) => (
   <ReactFlowProvider>
-    <ReactFlowWrapper key={sessionId} sessionId={sessionId} />
+    <ReactFlowWrapper key={sessionId} sessionId={sessionId} onOpenSettings={onOpenSettings} />
   </ReactFlowProvider>
 );
 

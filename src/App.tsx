@@ -78,7 +78,10 @@ const App: React.FC = () => {
       />
       <main className="flex-1 overflow-hidden relative">
         {currentSessionId ? (
-          <ChatFlow sessionId={currentSessionId} />
+          <ChatFlow
+            sessionId={currentSessionId}
+            onOpenSettings={() => setSettingsTab('models')}
+          />
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="text-center max-w-md p-8 bg-white rounded-lg shadow-subtle border border-neutral-100">

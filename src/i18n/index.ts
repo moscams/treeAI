@@ -168,8 +168,7 @@ const en: Record<string, string> = {
     'Since DeepSeek V4, thinking is on by default with effort=high. For chat, low is recommended: less thinking, faster replies, cheaper output tokens.',
   默认系统提示词: 'Default system prompt',
   '（可留空）': '(optional)',
-  '留空则不发送 system 消息 —— 这是合法请求，大多数模型不带系统提示词也能正常对话':
-    'If empty, no system message is sent — that is a valid request; most models chat fine without a system prompt.',
+  '留空则不发送 system 消息': 'If empty, no system message is sent',
   默认温度: 'Default temperature',
   默认最大令牌数: 'Default max tokens',
   保存模型: 'Save model',
@@ -275,6 +274,23 @@ const en: Record<string, string> = {
   模型已删除: 'Model deleted',
   '模型删除失败: {msg}': 'Failed to delete model: {msg}',
   '调整顺序失败: {msg}': 'Failed to reorder: {msg}',
+
+  // ── 思考强度说明（跟着档位变） ────────────────────────
+  '不发送 reasoning_effort，交给服务端默认行为，不确定就选这个。':
+    'Do not send reasoning_effort; let the server decide. Pick this if unsure.',
+  '不思考，最快最省 token，适合闲聊、翻译、改写。':
+    'No thinking. Fastest and cheapest — good for chit-chat, translation and rewriting.',
+  '思考量小，响应快、便宜，日常聊天够用。':
+    'Light thinking: fast, cheap, and plenty for everyday chat.',
+  '先想得更深再回答，效果更好，适合复杂推理、代码和长文。':
+    'Thinks deeper before answering. Better results for hard reasoning, code and long text.',
+  '思考预算拉满，效果上限最高，也最慢最贵，留给真正难的问题。':
+    'Maximum thinking budget: the best results, but the slowest and priciest. Save it for genuinely hard problems.',
+
+  // ── 没有模型时的空状态 ──────────────────────────────
+  还没有可用的模型: 'No model available yet',
+  '先添加一个模型，再开始对话。': 'Add a model first, then start chatting.',
+  去设置模型: 'Set up a model',
 };
 
 function interpolate(s: string, vars?: Record<string, string | number>): string {
