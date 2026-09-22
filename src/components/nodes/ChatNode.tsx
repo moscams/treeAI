@@ -581,10 +581,11 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
 
       {/* 底部「+」悬浮在节点外沿上：绝对定位在 .node-content 之外（外层 wrapper
           不能有 overflow:hidden，否则会被裁掉），因此不占任何布局高度。
-          它正好压在底部连线上，视觉上像「从这条线继续长出去」。 */}
+          放在**右下角**：底部中央正好是连线起点（source handle），几个子节点
+          分叉时几条边都从那里出发，浮在中间会和连线撞在一起。 */}
       <button
         type="button"
-        className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full border shadow-sm transition-colors ${
+        className={`absolute -bottom-3 -right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full border shadow-sm transition-colors ${
           hasAnswer
             ? 'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-700'
             : 'bg-white text-neutral-300 border-neutral-200 cursor-not-allowed'

@@ -209,10 +209,10 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       />
       </div>
 
-      {/* 同 ChatNode：底栏整条删掉，「+」悬浮在节点底边，不占布局高度 */}
+      {/* 同 ChatNode：底栏整条删掉，「+」悬浮在节点右下角，不占布局高度 */}
       <button
         type="button"
-        className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-900 bg-neutral-900 text-white shadow-sm transition-colors hover:bg-neutral-700"
+        className="absolute -bottom-3 -right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-900 bg-neutral-900 text-white shadow-sm transition-colors hover:bg-neutral-700"
         onClick={() => onAddChild(node.id)}
         title={t('添加子节点')}
       >

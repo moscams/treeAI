@@ -476,26 +476,26 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
         </div>
       )}
 
-      <div className="px-3 py-3 border-t border-neutral-100">
+      {/* 「新建会话」和它下面那排设置/主题合并成**一行**：
+          以前是两行两条分隔线，底部白占将近 60px 的高度；
+          现在新建占满剩余宽度，两个图标按钮插在右侧，一行了事。 */}
+      <div className="px-3 py-3 border-t border-neutral-100 flex items-center gap-1.5">
         <button
-          className="w-full flex items-center justify-center space-x-2 py-2 px-4 bg-neutral-900 text-white rounded-md hover:bg-neutral-800 transition-colors"
+          className="flex-1 min-w-0 flex items-center justify-center space-x-2 py-2 px-4 bg-neutral-900 text-white rounded-md hover:bg-neutral-800 transition-colors"
           onClick={handleCreateSession}
         >
           <Plus size={16} />
           <span className="text-sm">{t('新建会话')}</span>
         </button>
-      </div>
-
-      <div className="px-3 py-3 border-t border-neutral-100 flex items-center justify-center space-x-2">
         <button
-          className="flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
+          className="shrink-0 flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
           onClick={() => onOpenSettings('models')}
           title={t('设置')}
         >
           <Settings size={18} />
         </button>
         <button
-          className="flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
+          className="shrink-0 flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
           onClick={toggleTheme}
           title={theme === 'dark' ? t('切换到日间模式') : t('切换到夜间模式')}
         >
