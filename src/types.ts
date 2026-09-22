@@ -112,12 +112,6 @@ export interface ModelResponse {
   error?: string;
 }
 
-export interface FileExtractResult {
-  text: string;
-  filename: string;
-  mimeType: string;
-}
-
 export interface NodePosition {
   x: number;
   y: number;

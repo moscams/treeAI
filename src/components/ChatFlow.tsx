@@ -6,28 +6,30 @@ import ReactFlow, {
   Edge,
   Node,
   useReactFlow,
+  useStoreApi,
   applyNodeChanges,
   NodeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import SystemNode from './nodes/SystemNode';
 import ChatNode from './nodes/ChatNode';
+import SessionStats from './SessionStats';
 import { useSessionStore } from '../stores/sessionStore';
 import { useModelStore } from '../stores/modelStore';
 import { useThemeStore } from '../stores/themeStore';
 import { ChatNode as ChatNodeType, NodeData, UsageStats } from '../types';
+import { useT } from '../i18n';
 import { sendChatRequest } from '../services/apiService';
-import { Share2, LayoutGrid, FileUp, FileJson } from 'lucide-react';
+import { Share2, LayoutGrid, FileJson, BarChart3 } from 'lucide-react';
 import { exportToMindmap } from '../utils/exportUtils';
 import { exportSessionToFile } from '../utils/sessionTransfer';
-import FileUploadButton from './FileUploadButton';
 import { showSuccess, showError, showInfo } from '../utils/notification';
 import { deriveSessionTitle } from '../utils/sessionTitle';
 
 /*
  * 画布布局常量。
  *
- * 宽度必须和 index.css 里 .node-content 的 width（560px）保持一致，
+ * 宽度必须和 index.css 里 .node-content 的 width（644px）保持一致，
  * 否则子树宽度会算得比实际窄，兄弟节点互相重叠。
  * 高度没法预先知道（回答长短不一），420 只是估值 —— 真实尺寸由
  * collectNodeDimensions 从 React Flow 量到后覆盖。
@@ -35,10 +37,22 @@ import { deriveSessionTitle } from '../utils/sessionTitle';
  * 这几个值必须放模块级：建图有两条路径（calculateNodeLayout 和下面那个
  * 渲染 useEffect），放函数里就没法共用了。
  */
-const NODE_WIDTH = 560;
+const NODE_WIDTH = 644;
 const NODE_HEIGHT = 420;
 const H_GAP = 220;
 const V_GAP = 140;
+
+/*
+ * 跨会话保留的视口（平移 + 缩放），**按会话分开存**。
+ *
+ * 切换会话时 ReactFlowWrapper 会被 key 重建，视口会重置回 defaultViewport。
+ * 两个理由让它必须 per-session、而且必须连平移一起记：
+ *   1) 只记缩放、切回来平移归零时，节点若长在离原点很远处，屏幕就是一片空白；
+ *   2) 每个会话的树形状不同，A 图的视角对 B 图没意义。
+ * 用模块级 Map 存（不是组件 state，重建后 state 也没了）。
+ */
+type SavedViewport = { x: number; y: number; zoom: number };
+const savedViewports = new Map<string, SavedViewport>();
 
 /**
  * 节点的有效坐标。
@@ -115,10 +129,31 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const reactFlowInstance = useReactFlow();
+  const t = useT();
+
+  // 持续把当前视口同步到模块级 Map（按 sessionId 分开）。
+  //
+  // 不能用「卸载时读一次」：key 变化时 React 先 render 新实例（此时就会读
+  // savedViewports）、再在 commit 阶段跑旧实例的 cleanup，顺序反了 ——
+  // 新实例读到的还是旧值。
+  // 也不能用 onMoveEnd：React Flow 对「内部」视口变更（Controls 的 +/- 按钮）
+  // 带 sourceEvent.internal 直接 return，不会触发。
+  //
+  // 用 store.subscribe 而不是 useStore(selector)：后者会在平移的每一帧
+  // 都触发整个 wrapper 重渲染，纯属浪费。
+  const store = useStoreApi();
+  useEffect(() => {
+    const write = (s: { transform: [number, number, number] }) => {
+      savedViewports.set(sessionId, { x: s.transform[0], y: s.transform[1], zoom: s.transform[2] });
+    };
+    const unsub = store.subscribe(write);
+    return unsub;
+  }, [sessionId, store]);
   const abortControllerRef = useRef<Record<string, AbortController>>({});
   const [nodeDimensions, setNodeDimensions] = useState<Record<string, { width: number, height: number }>>({});
   // 刚新建的节点 id。渲染完成后把它平移到视野中间，否则可能落在屏幕外面。
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const [showStats, setShowStats] = useState(false);
 
   /*
    * 上一次交给 React Flow 的节点对象。两个用途：
@@ -424,7 +459,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     if (!model) {
       // 以前这里是静默 return —— 点了「重新生成」什么都不发生，也没任何提示。
       // 导入的备份最容易撞上：文件里的模型没一起导入时 modelId 是悬空的。
-      showError('该节点引用的模型不存在，请在节点设置里重新选一个模型');
+      showError(t('该节点引用的模型不存在，请在节点设置里重新选一个模型'));
       return;
     }
 
@@ -570,7 +605,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
 
     const model = models.find(m => m.id === node.modelId);
     if (!model) {
-      showError('该节点引用的模型不存在，请在节点设置里重新选一个模型');
+      showError(t('该节点引用的模型不存在，请在节点设置里重新选一个模型'));
       return;
     }
 
@@ -589,7 +624,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
 
       addNodeToSession(sessionId, branch);
       setPendingFocusId(branch.id);
-      showInfo('已创建新分支，正在重新生成…');
+        showInfo(t('已创建新分支，正在重新生成…'));
       // 新节点还没进 store，上下文要手动带上它
       void runNodeGeneration(branch.id, [...session.nodes, branch]);
       return;
@@ -621,7 +656,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
 
     const model = models.find(m => m.id === node.modelId);
     if (!model) {
-      showError('该节点引用的模型不存在，请在节点设置里重新选一个模型');
+      showError(t('该节点引用的模型不存在，请在节点设置里重新选一个模型'));
       return;
     }
 
@@ -675,8 +710,8 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     // 提示统一从这里发：只有这里才知道系统提示词有没有被一并替换
     showInfo(
       promptReplaced
-        ? `已切换到 ${nextModel.name}，系统提示词一并更新`
-        : `已切换到模型: ${nextModel.name}`
+        ? t('已切换到 {name}，系统提示词一并更新', { name: nextModel.name })
+        : t('已切换到模型: {name}', { name: nextModel.name })
     );
   };
 
@@ -708,10 +743,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     if (!session) return;
     try {
       exportToMindmap(session);
-      showSuccess('导出成功');
+      showSuccess(t('导出成功'));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      showError('导出失败:' + message);
+      showError(t('导出失败: {msg}', { msg: message }));
     }
   };
 
@@ -721,10 +756,10 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     if (!session) return;
     try {
       exportSessionToFile(session);
-      showSuccess('会话已导出');
+      showSuccess(t('会话已导出'));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      showError('导出失败:' + message);
+      showError(t('导出失败: {msg}', { msg: message }));
     }
   };
 
@@ -777,30 +812,6 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
     }
   }, [session, sessionId, models, defaultModelId, addNodeToSession]);
 
-  const handleUploadComplete = (extractedText: string) => {
-    if (!session || !defaultModelId) return;
-    
-    const systemNode = session.nodes.find(n => n.type === 'system');
-    if (!systemNode) return;
-
-    const newNode: ChatNodeType = {
-      id: crypto.randomUUID(),
-      parentId: systemNode.id,
-      type: 'chat',
-      userMessage: extractedText,
-      assistantMessage: "",
-      modelId: systemNode.modelId || defaultModelId,
-      temperature: systemNode.temperature || 0.7,
-      maxTokens: systemNode.maxTokens || 8192,
-      createdAt: new Date().toISOString(),
-      // 上传的文件也是个 chat 节点，同样要走落点计算 ——
-      // 不写 position 的话它会因为没有位置而掉到原点，压在系统节点上
-      position: computeChildPosition(systemNode.id),
-    };
-
-    addNodeToSession(sessionId, newNode);
-    setPendingFocusId(newNode.id);
-  };
 
   // 节点 data 里的回调必须是稳定引用 —— 只要引用变了，所有节点都会重渲染。
   // 但回调本身又必须读到最新的 session / state，所以用 ref 转发：
@@ -900,19 +911,18 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   return (
     <div className="h-full w-full relative">
       <div className="absolute top-4 right-4 z-10 flex space-x-3">
-        <FileUploadButton onUploadComplete={handleUploadComplete}>
-          <button 
-            className="flex items-center justify-center p-2 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
-            title="上传文件"
-          >
-            <FileUp size={18} />
-          </button>
-        </FileUploadButton>
-        
+        <button 
+          className="flex items-center justify-center p-2 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
+          onClick={() => setShowStats(v => !v)}
+          title={t('会话统计')}
+        >
+          <BarChart3 size={18} />
+        </button>
+
         <button 
           className="flex items-center justify-center p-2 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
           onClick={handleExportSession}
-          title="导出当前会话（JSON）"
+          title={t('导出当前会话（JSON）')}
         >
           <FileJson size={18} />
         </button>
@@ -920,17 +930,19 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         <button 
           className="flex items-center justify-center p-2 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
           onClick={handleExport}
-          title="导出思维导图"
+          title={t('导出思维导图')}
         >
           <Share2 size={18} />
         </button>
       </div>
+
+      {showStats && <SessionStats session={session} onClose={() => setShowStats(false)} />}
       
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+        defaultViewport={savedViewports.get(sessionId) ?? { x: 0, y: 0, zoom: 1 }}
         minZoom={0.2}
         maxZoom={2}
         attributionPosition="bottom-left"
@@ -971,7 +983,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         <button 
           className="flex items-center justify-center p-2.5 bg-white border border-neutral-200 rounded-md text-neutral-700 hover:bg-neutral-50 transition-colors shadow-minimal"
           onClick={handleReorganizeLayout}
-          title="重新排布节点"
+          title={t('重新排布节点')}
         >
           <LayoutGrid size={18} />
         </button>

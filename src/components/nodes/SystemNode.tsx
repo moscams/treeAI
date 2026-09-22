@@ -4,6 +4,7 @@ import { Plus, Settings } from 'lucide-react';
 import { useModelStore } from '../../stores/modelStore';
 import { gsap } from 'gsap';
 import { NodeData } from '../../types';
+import { useT } from '../../i18n';
 
 const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   const { node, onEdit, onAddChild, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
@@ -16,6 +17,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const updateNodeInternals = useUpdateNodeInternals();
+  const t = useT();
 
   // 同 ChatNode：入场不用位移动画（transform 会污染 React Flow 对 handle 的测量，
   // 导致动画期间连线终点不贴节点），只做淡入；并且等节点真正可见后再开始淡入
@@ -98,21 +100,21 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   const nodeHeight = isEditing || showSettings ? 'auto' : 'min-h-[100px]';
 
   return (
-    <div 
-      ref={nodeRef}
-      className={`node-content bg-white rounded-lg overflow-hidden border border-neutral-200 shadow-minimal ${nodeHeight}`}
-    >
+    <div ref={nodeRef} className="relative">
+      <div
+        className={`node-content bg-white rounded-lg overflow-hidden border border-neutral-200 shadow-minimal ${nodeHeight}`}
+      >
       <div className="flex justify-between items-center p-2 text-neutral-700 border-b border-neutral-100 shrink-0">
         <div className="flex items-center">
           <Settings size={14} className="mr-1.5 text-neutral-500" />
-          <span className="text-xs font-medium">系统提示词</span>
+          <span className="text-xs font-medium">{t('系统提示词')}</span>
         </div>
         
         <div className="flex space-x-1 node-toolbar">
           <button 
             className="p-1 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded transition-colors"
             onClick={() => setShowSettings(!showSettings)}
-            title="模型设置"
+            title={t('模型设置')}
           >
             <Settings size={12} />
           </button>
@@ -123,7 +125,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         <div className="p-3 bg-neutral-50 border-b border-neutral-100">
           <div className="mb-3">
             <label className="block text-xs font-medium text-neutral-700 mb-1">
-              模型
+              {t('模型')}
             </label>
             <select
               value={node.modelId || ''}
@@ -139,7 +141,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
           <div className="mb-3">
             <div className="flex justify-between items-center mb-1">
               <label className="block text-xs font-medium text-neutral-700">
-                温度
+                {t('温度')}
               </label>
               <span className="text-xs text-neutral-500">{node.temperature.toFixed(1)}</span>
             </div>
@@ -157,7 +159,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-xs font-medium text-neutral-700">
-                最大令牌数
+                {t('最大令牌数')}
               </label>
               <span className="text-xs text-neutral-500">{node.maxTokens}</span>
             </div>
@@ -183,7 +185,7 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             onBlur={handleSave}
             onKeyDown={handleKeyDown}
             className="w-full h-32 p-2.5 border border-neutral-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400"
-            placeholder="在此输入系统提示词..."
+            placeholder={t('在此输入系统提示词...')}
           />
         ) : (
           <div 
@@ -193,21 +195,11 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
           >
             {node.userMessage || (
               <span className="text-neutral-400 italic">
-                点击添加系统提示词...
+                {t('点击添加系统提示词...')}
               </span>
             )}
           </div>
         )}
-      </div>
-
-      <div className="p-2 flex justify-end space-x-2 border-t border-neutral-100 shrink-0">
-        <button 
-          className="flex items-center justify-center p-1.5 bg-neutral-900 text-white rounded-full hover:bg-neutral-800 transition-colors"
-          onClick={() => onAddChild(node.id)}
-          title="添加子节点"
-        >
-          <Plus size={14} />
-        </button>
       </div>
 
       <Handle
@@ -215,6 +207,17 @@ const SystemNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         position={Position.Bottom}
         className="!bg-neutral-400 !border-white"
       />
+      </div>
+
+      {/* 同 ChatNode：底栏整条删掉，「+」悬浮在节点底边，不占布局高度 */}
+      <button
+        type="button"
+        className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-neutral-900 bg-neutral-900 text-white shadow-sm transition-colors hover:bg-neutral-700"
+        onClick={() => onAddChild(node.id)}
+        title={t('添加子节点')}
+      >
+        <Plus size={14} />
+      </button>
     </div>
   );
 };

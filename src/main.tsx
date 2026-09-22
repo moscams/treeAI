@@ -31,6 +31,21 @@ window.hljs = hljs;
 window.katex = katex;
 
 config({
+  // 从源头关掉 markdown 里的原始 HTML。
+  //
+  // md-editor-rt 的 sanitize prop 默认是恒等函数（不洗），markdown-it 又默认
+  // html: true，所以模型回答（或导入的备份正文）里写 <script>/<img onerror> /
+  // <svg onload> 会被原样插进 DOM 并执行 —— API Key 就在同源 IndexedDB 里，
+  // 等于白送。关掉 html 后，markdown-it 把这类标签转义成纯文本，DOM 里
+  // 不再有可执行节点。
+  //
+  // 为什么不用 MDPreview 的 sanitize prop：它的清洗发生在「整段 HTML 编译完之后」，
+  // 会把 md-editor 自己生成的 <svg>（代码块折叠箭头）也一并转义成文本，
+  // 代码块头部就显示成一堆 <svg ...> 源码。html: false 只作用于 markdown 源文本，
+  // md-editor 自己生成的 HTML（代码块头、KaTeX 等）不受影响。
+  markdownItConfig: (md) => {
+    md.set({ html: false });
+  },
   editorExtensions: {
     highlight: {
       js: '/hljs-shim.js',

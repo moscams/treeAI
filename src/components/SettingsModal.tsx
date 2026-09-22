@@ -5,6 +5,7 @@ import ModelsPanel from './settings/ModelsPanel';
 import DataPanel from './settings/DataPanel';
 import AppearancePanel from './settings/AppearancePanel';
 import AboutPanel from './settings/AboutPanel';
+import { useT } from '../i18n';
 
 export type SettingsTab = 'models' | 'data' | 'appearance' | 'about';
 
@@ -23,6 +24,7 @@ const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
 const SettingsModal: React.FC<SettingsModalProps> = ({ initialTab = 'models', onClose }) => {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const modalRef = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   // onClose 每次父组件重渲染都是新函数。如果直接把它写进 effect 依赖，
   // 模型列表拖拽排序 → store 变化 → App 重渲染 → onClose 变新 → effect 重跑
@@ -57,15 +59,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ initialTab = 'models', on
     >
       <div
         ref={modalRef}
-        className="bg-white rounded-lg shadow-subtle max-w-4xl w-full h-[80vh] max-h-[720px] flex flex-col overflow-hidden"
+        className="bg-white rounded-lg shadow-subtle max-w-5xl w-full h-[80vh] max-h-[720px] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center px-5 py-4 border-b border-neutral-100 shrink-0">
-          <h2 className="text-lg font-medium text-neutral-800">设置</h2>
+          <h2 className="text-lg font-medium text-neutral-800">{t('设置')}</h2>
           <button
             className="text-neutral-500 hover:text-neutral-700 p-1 rounded-md hover:bg-neutral-50"
             onClick={onClose}
-            title="关闭"
+            title={t('关闭')}
           >
             <X size={18} />
           </button>
@@ -87,7 +89,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ initialTab = 'models', on
                   }`}
                 >
                   {item.icon}
-                  <span>{item.label}</span>
+                  <span>{t(item.label)}</span>
                 </button>
               );
             })}

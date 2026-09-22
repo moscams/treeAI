@@ -155,11 +155,11 @@ body {
   display: flex;
   flex-direction: column;
   /* 固定宽度：ChatFlow.tsx 的树形布局是按固定宽度算子树宽度的，
-     节点宽度不固定会让兄弟节点重叠。改这里必须同步改
-     calculateNodeLayout() 里的 defaultNodeWidth。 */
-  width: 560px;
-  min-width: 560px;
-  max-width: 560px;
+     节点宽度不固定会让兄弟节点重叠。改这里必须同步改 ChatFlow.tsx
+     里的 NODE_WIDTH 常量（两边必须一致）。 */
+  width: 644px;
+  min-width: 644px;
+  max-width: 644px;
   max-height: 760px;
   scroll-behavior: smooth;
   overflow-wrap: break-word;
@@ -227,12 +227,33 @@ body {
 .md-preview {
   @apply prose prose-blue max-w-none;
   max-width: 100% !important;
+  /* 和输入框 / 用户消息保持同一字号。Tailwind prose 默认 1rem（16px），
+     比输入区小一号，看起来像两种字体。 */
+  font-size: 19px;
+  /* 代码块配色交给 md-editor 自己管（亮色 #f8f8f8 / 暗色 #1a1a1a）。
+     Tailwind prose 默认会给 pre 铺一层深色底（--tw-prose-pre-bg = #1f2937），
+     不关掉的话白天也是黑底。 */
+  --tw-prose-pre-bg: transparent;
+  --tw-prose-pre-code: inherit;
   overflow-wrap: break-word;
   word-break: break-word;
 }
 
-.md-preview pre, .md-preview code {
-  white-space: pre-wrap;
+/* md-editor 内层把字号硬编码成 16px（`.md-editor-preview{font-size:16px}` 和
+   `div.vuepress-theme{font-size:16px}`），只改 .md-preview 容器没用 ——
+   真正装正文的是内层。标题用 em，会跟着一起缩放。 */
+.md-preview .md-editor-preview {
+  font-size: 19px;
+}
+
+/* 代码折行：长行直接换行，不靠横向滚动条。
+   md-editor 自己会给 code 设 white-space: pre（特异度更高），
+   所以这里用 !important 压住；overflow-wrap: anywhere 保证连成一坨的
+   长 token（URL、压缩过的代码）也能断行。 */
+.md-preview pre,
+.md-preview pre code {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
   word-break: break-word;
   max-width: 100%;
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Github, Heart, ExternalLink, Sparkles, ShieldCheck } from 'lucide-react';
 import Logo from '../Logo';
+import { useT } from '../../i18n';
 
 // 与 package.json 的 version 保持一致。刻意不 import JSON —— 那会把整个
 // package.json 打进产物里，为了一行版本号不值得。
@@ -39,6 +40,7 @@ const FEATURES = [
 ];
 
 const AboutPanel: React.FC = () => {
+  const t = useT();
   return (
     <div className="p-6 space-y-6 overflow-y-auto h-full">
       <section className="text-center">
@@ -48,21 +50,21 @@ const AboutPanel: React.FC = () => {
         <h3 className="text-lg font-medium text-neutral-800">Tree AI Plus</h3>
         <p className="text-xs text-neutral-400 mt-0.5">v{APP_VERSION} · MIT License</p>
         <p className="text-sm text-neutral-500 mt-3 leading-relaxed">
-          一个把线性对话变成画布的本地优先工作台。
-          每个回答都可以继续分叉，把「换一种问法」「换一个模型」变成可以对照的树。
+          {t('一个把线性对话变成画布的本地优先工作台。')}
+          {t('每个回答都可以继续分叉，把「换一种问法」「换一个模型」变成可以对照的树。')}
         </p>
       </section>
 
       <section>
         <h4 className="flex items-center text-sm font-medium text-neutral-800 mb-2">
           <Sparkles size={15} className="mr-1.5 text-neutral-400" />
-          它能做什么
+          {t('它能做什么')}
         </h4>
         <ul className="space-y-1.5">
           {FEATURES.map(feature => (
             <li key={feature} className="flex items-start text-sm text-neutral-600">
               <span className="mt-1.5 mr-2 w-1 h-1 rounded-full bg-neutral-400 shrink-0" />
-              <span>{feature}</span>
+              <span>{t(feature)}</span>
             </li>
           ))}
         </ul>
@@ -71,32 +73,32 @@ const AboutPanel: React.FC = () => {
       <section>
         <h4 className="flex items-center text-sm font-medium text-neutral-800 mb-2">
           <ShieldCheck size={15} className="mr-1.5 text-neutral-400" />
-          数据与隐私
+          {t('数据与隐私')}
         </h4>
         <p className="text-sm text-neutral-600 leading-relaxed">
-          会话与模型配置都保存在这台浏览器里，卸载或清理浏览器数据会一并删除，
-          请定期用「设置 → 数据」导出备份。API Key 绝不会进入备份文件。
+          {t('会话与模型配置都保存在这台浏览器里，卸载或清理浏览器数据会一并删除，')}
+          {t('请定期用「设置 → 数据」导出备份。API Key 绝不会进入备份文件。')}
         </p>
       </section>
 
       <section className="pt-2 border-t border-neutral-100">
-        <h4 className="text-sm font-medium text-neutral-800 mb-2">项目链接</h4>
+        <h4 className="text-sm font-medium text-neutral-800 mb-2">{t('项目链接')}</h4>
         <div className="flex flex-wrap gap-2">
           <LinkButton href={FORK_URL} icon={<Github size={15} />}>
-            本分支源码
+            {t('本分支源码')}
           </LinkButton>
           <LinkButton href={UPSTREAM_URL} icon={<Github size={15} />}>
-            上游项目
+            {t('上游项目')}
           </LinkButton>
         </div>
         <p className="mt-3 text-xs text-neutral-400 leading-relaxed">
-          Tree AI Plus 是 <a href={UPSTREAM_URL} target="_blank" rel="noreferrer noopener" className="underline hover:text-neutral-600">Anionex/treeAI</a> 的增强分支。
-          如果你觉得有用，欢迎给两个仓库都点个 Star。
+          {t('Tree AI Plus 是')}<a href={UPSTREAM_URL} target="_blank" rel="noreferrer noopener" className="underline hover:text-neutral-600">Anionex/treeAI</a>{t('的增强分支。')}
+          {t('如果你觉得有用，欢迎给两个仓库都点个 Star。')}
         </p>
       </section>
 
       <p className="flex items-center justify-center text-xs text-neutral-400 pt-2">
-        用 <Heart size={12} className="mx-1 text-rose-400" fill="currentColor" /> 构建
+        {t('用')} <Heart size={12} className="mx-1 text-rose-400" fill="currentColor" /> {t('构建')}
       </p>
     </div>
   );

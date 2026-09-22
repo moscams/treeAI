@@ -182,6 +182,77 @@
 **排查心法**：控制台报某个模块缺 default export 时，先 `curl` 一下那个模块的字节数，
 不要往代码语法上查。
 
+## 本轮功能（第 8 轮）
+
+1. **代码复制按钮 + 折行**
+   - 复制按钮此前看起来是坏的，实因 XSS 清洗误伤：`sanitize` prop 把 md-editor
+     自己生成的折叠箭头 `<svg>` 转义成了文本。改用 `markdownItConfig` 的 `html:false`
+     从 markdown 源文本层堵 XSS，chrome 不再被误伤（参见上一节）。
+     `copy2clipboard` 在 localhost 是真能用的，报「复制失败」只在 headless 无
+     剪贴板权限时出现。
+   - 代码折行：`.md-preview pre, .md-preview pre code { white-space: pre-wrap !important;
+     overflow-wrap: anywhere }`，长行不再产生横向滚动条。
+2. **切会话保留视口**：模块级 `savedZoom` + `useStore(s => s.transform[2])` 持续同步，
+   `defaultViewport` 还原。注意两个坑：`onMoveEnd` 对 Controls 的 ± 按钮不触发
+   （`sourceEvent.internal` 直接 return）；「卸载时读一次」顺序也不对（React 先 render
+   新实例再跑旧 cleanup）。
+   > 第 9 轮已升级为「每个会话各记一份视口（平移+缩放）」——见下节。
+3. **节点宽 644px（+15%）、正文与输入同字号 19px**。
+4. **设置右栏加宽**：弹窗 `max-w-5xl`，模型列表固定 `w-60`，表单 `flex-1` ——
+   导航（176）和列表（240）宽度不变，多出的宽度全给表单。
+5. **回答结束不再闪**：流式/非流式共用一个 `MdPreview`，结束时只改 `modelValue`，
+   不再切换分支（原来会在中间出现一帧空渲染）。
+6. **删除「导入 md」**：移除 `FileUploadButton` / `handleUploadComplete` / `fileUtils`，
+   卸载 `react-dropzone` 依赖与 `FileExtractResult` 类型。
+7. **会话统计**：右上角 `BarChart3` 按钮 → `SessionStats` 浮层，显示节点/提问/回答/
+   分支/分支点/输入输出思考 token/缓存命中率/计费次数/回答字数/创建更新时间。
+8. **空节点不允许再建子节点**：`ChatNode` 的「+」在节点没有回答（`assistantMessage`
+   或思维链）时禁用。避免在空节点下面接一串对话、回到空节点却发现上下文里空了一级。
+
+## 本轮修复与功能（第 9 轮）
+
+> 来源：用户提的 9 条反馈。
+
+### 修复
+
+1. **切会话要点好几次才生效**（`Sidebar.tsx`）
+   - 点击处理器原来只挂在内层标题 `div` 上，行的 `px-3 / py-2` 内边距、图标之间的
+     缝隙都是死区。现在挂到**整行**；右侧操作区整体 `stopPropagation`，
+     点星标/编辑/删除不会误切会话。
+2. **进会话偶尔一片白**（`ChatFlow.tsx`）
+   - 根因是上一轮「只记缩放、不记平移」：切回来平移归零，节点若长在离原点很远处，
+     屏幕正好落在空白区。现已改为按会话记完整视口，见功能 1。
+
+### 功能
+
+1. **每幅图记自己的视口**（`ChatFlow.tsx`）
+   - `savedZoom: number` → `savedViewports: Map<sessionId, {x,y,zoom}>`；
+     用 `useStoreApi().subscribe` 持续写入（不走 `useStore(selector)`，避免平移每一帧
+     都重渲染整个 wrapper）；`defaultViewport` 按 `sessionId` 读取。
+2. **代码块亮色模式不再黑底**（`index.css`）
+   - 黑底其实来自 Tailwind prose 的 `--tw-prose-pre-bg = #1f2937`，不是 md-editor。
+     在 `.md-preview` 里置为 `transparent`，交回 md-editor 的 vuepress 变量
+     （亮 #f8f8f8 / 暗 #1a1a1a）。
+3. **i18n（中/英）**（新增 `src/i18n/index.ts`）
+   - **直接用中文原文当 key**，词典只维护 zh → en 一张表；漏翻自动回退中文，
+     不会露出 `model.settings.title` 这种 key，可以逐条补。变量用 `{name}`。
+   - 组件里 `useT()`（语言一变就重渲染）；store / notification 里用 `t()`。
+   - 入口：设置 → 外观 → 语言；持久化在 `localStorage['treeai-lang']`，
+     首次按 `navigator.language` 猜测，并同步 `document.documentElement.lang`。
+   - 有个小脚本心法：写探针时注意工具调用会先做一次 JSON 反转义，`\\s` 会变成 `\s`，
+     在模板字符串里再被吃成 `s` —— 用 `textContent` 复核，别疑神疑鬼觉得字体丢了字母。
+4. **回答字号与提问一致**（`index.css`）
+   - 只改 `.md-preview` 没用：md-editor 内层 `.md-editor-preview{font-size:16px}` 和
+     `div.vuepress-theme{font-size:16px}` 把正文压回 16px。补一条
+     `.md-preview .md-editor-preview { font-size: 19px }` 才真正生效（标题用 em 会跟着缩放）。
+5. **底部工具栏不再占地方**（`ChatNode.tsx` / `SystemNode.tsx`）
+   - 整条底栏删掉：「+」改成**绝对定位悬浮在节点底边中央**（外层 wrapper 不能
+     `overflow:hidden`，否则被裁），正好压在连线上；复制/重试挪进回答右上角的
+     悬停浮层（报错态在占位文案旁保留一个「重试」按钮，保证入口还在）。
+6. **统计加年份**（`SessionStats.tsx`）：日期格式加 `year: 'numeric'`，并跟随语言切 `zh-CN`/`en-US`。
+7. **入/出改成上下箭头**：统计浮层用 `↓ 输入 token` / `↑ 输出 token`；
+   节点底部的 `入 X · 出 Y` → `↓ X · ↑ Y`。
+
 ## 待讨论
 
 - **标签（tags）**：多对多、可跨维度筛选，但要配标签管理 UI。会话量上百之后再考虑；

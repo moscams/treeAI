@@ -10,6 +10,7 @@ import { showSuccess, showWarning, showInfo } from '../utils/notification';
 import { useThemeStore } from '../stores/themeStore';
 import { DEFAULT_SESSION_TITLE } from '../utils/sessionTitle';
 import type { SettingsTab } from './SettingsModal';
+import { useT } from '../i18n';
 
 interface SidebarProps {
   onOpenSettings: (tab?: SettingsTab) => void;
@@ -42,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
   } = useSessionStore();
 
   const { theme, toggleTheme } = useThemeStore();
+  const t = useT();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -127,9 +129,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
         ...session,
         title: editTitle.trim()
       });
-      showSuccess('会话名称已更新');
+      showSuccess(t('会话名称已更新'));
     } else if (!editTitle.trim()) {
-      showWarning('会话名称不能为空');
+      showWarning(t('会话名称不能为空'));
     }
     setEditingId(null);
   };
@@ -144,7 +146,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
 
   const handleDeleteSession = (id: string) => {
     deleteSession(id);
-    showInfo('会话已删除');
+    showInfo(t('会话已删除'));
   };
 
   const handleCreateFolder = async () => {
@@ -154,7 +156,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
     }
     const folder = await createFolder(newFolderName);
     if (folder) {
-      showSuccess(`已创建文件夹「${folder.name}」`);
+      showSuccess(t('已创建文件夹「{name}」', { name: folder.name }));
     }
     setNewFolderName('');
     setIsCreatingFolder(false);
@@ -163,7 +165,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
   const handleRenameFolder = async (id: string) => {
     if (folderNameDraft.trim()) {
       await renameFolder(id, folderNameDraft);
-      showSuccess('文件夹已重命名');
+      showSuccess(t('文件夹已重命名'));
     }
     setEditingFolderId(null);
     setFolderNameDraft('');
@@ -171,9 +173,9 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
 
   const handleDeleteFolder = async (id: string, name: string) => {
     // 会话不会被删，只是回到「未分类」，所以这里说清楚，避免用户以为连聊天记录一起没了
-    if (!window.confirm(`删除文件夹「${name}」？\n里面的会话会移到「未分类」，不会被删除。`)) return;
+    if (!window.confirm(t('删除文件夹「{name}」？\n里面的会话会移到「未分类」，不会被删除。', { name }))) return;
     await deleteFolder(id);
-    showInfo('文件夹已删除，会话已移到「未分类」');
+    showInfo(t('文件夹已删除，会话已移到「未分类」'));
   };
 
   const handleDropOnFolder = (e: React.DragEvent, target: MoveTarget) => {
@@ -218,7 +220,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
           <input
             ref={searchInputRef}
             type="text"
-            placeholder="搜索标题或内容..."
+            placeholder={t('搜索标题或内容...')}
             className="w-full pl-9 pr-16 py-2 rounded-md border border-neutral-200 bg-neutral-50 focus:outline-none focus:ring-1 focus:ring-neutral-300 focus:border-neutral-300 text-sm"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -231,7 +233,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
               <button
                 className="text-neutral-400 hover:text-neutral-600 p-1"
                 onClick={() => setSearchQuery('')}
-                title="清除搜索"
+                title={t('清除搜索')}
               >
                 <X size={14} />
               </button>
@@ -243,7 +245,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
                   : 'text-neutral-300 hover:text-neutral-500'
               }`}
               onClick={() => setStarredOnly(v => !v)}
-              title={starredOnly ? '显示全部会话' : '只看收藏'}
+              title={starredOnly ? t('显示全部会话') : t('只看收藏')}
             >
               <Star size={14} fill={starredOnly ? 'currentColor' : 'none'} />
             </button>
@@ -257,7 +259,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
           className={chipClass(currentFolderView === 'all')}
           onClick={() => setFolderView('all')}
         >
-          全部
+          {t('全部')}
         </button>
 
         {folders.map(folder => {
@@ -299,14 +301,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
                 <span className="inline-flex items-center gap-0.5 ml-0.5">
                   <button
                     className="hover:opacity-70"
-                    title="重命名"
+                    title={t('重命名')}
                     onClick={() => { setEditingFolderId(folder.id); setFolderNameDraft(folder.name); }}
                   >
                     <Edit size={11} />
                   </button>
                   <button
                     className="hover:opacity-70"
-                    title="删除文件夹"
+                    title={t('删除文件夹')}
                     onClick={() => handleDeleteFolder(folder.id, folder.name)}
                   >
                     <X size={11} />
@@ -321,7 +323,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
           <input
             autoFocus
             className="flex-shrink-0 w-24 px-2 py-1 text-xs border border-neutral-300 rounded-full focus:outline-none focus:ring-1 focus:ring-neutral-400"
-            placeholder="文件夹名"
+            placeholder={t('文件夹名')}
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onBlur={handleCreateFolder}
@@ -334,7 +336,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
           <button
             className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-neutral-400 border border-dashed border-neutral-300 hover:text-neutral-600 hover:border-neutral-400"
             onClick={() => setIsCreatingFolder(true)}
-            title="新建文件夹"
+            title={t('新建文件夹')}
           >
             <FolderPlus size={12} />
           </button>
@@ -349,7 +351,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
               dragOverFolder === '__uncategorized__' ? 'ring-2 ring-amber-300 border-amber-300' : ''
             }`}
           >
-            <button onClick={() => setFolderView('uncategorized')}>未分类</button>
+            <button onClick={() => setFolderView('uncategorized')}>{t('未分类')}</button>
           </div>
         )}
       </div>
@@ -358,12 +360,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
         {visibleSessions.length === 0 ? (
           <div className="text-center text-neutral-400 py-8 text-sm">
             {searchQuery
-              ? '没有匹配的会话'
+              ? t('没有匹配的会话')
               : starredOnly
-                ? '还没有收藏的会话'
+                ? t('还没有收藏的会话')
                 : currentFolderView !== 'all'
-                  ? '这个文件夹还是空的'
-                  : '暂无会话'}
+                  ? t('这个文件夹还是空的')
+                  : t('暂无会话')}
           </div>
         ) : (
           visibleSessions.map(session => (
@@ -379,6 +381,10 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
                   ? 'bg-neutral-100 text-neutral-900'
                   : 'text-neutral-600 hover:bg-neutral-50'
               }`}
+              // 点击切会话：监听器挂在**整行**上。以前只挂在内层标题 div，
+              // 行的 px-3 / py-2 内边距和图标右侧的缝隙都是死区，
+              // 点到那里没反应 —— 表现就是「要点好几次才切得过去」。
+              onClick={() => setCurrentSessionId(session.id)}
             >
               {editingId === session.id ? (
                 <input
@@ -393,14 +399,17 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
               ) : (
                 <div
                   className="flex items-center flex-1 truncate cursor-pointer"
-                  onClick={() => setCurrentSessionId(session.id)}
                 >
                   <MessageSquare size={16} className="mr-2 flex-shrink-0" />
                   <span className="text-sm">{session.title}</span>
                 </div>
               )}
 
-              <div className="flex items-center space-x-0.5">
+              <div
+                className="flex items-center space-x-0.5"
+                // 操作区整体不冒泡：图标之间的缝隙点到也不该切会话
+                onClick={(e) => e.stopPropagation()}
+              >
                 {/* 星标放到右侧操作区（和编辑/删除一起）。已收藏时常驻显示，
                     未收藏时 hover 才出现 —— 既不挡标题，也能一眼看出哪些收藏了。 */}
                 <button
@@ -413,7 +422,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
                     e.stopPropagation();
                     toggleStarred(session.id);
                   }}
-                  title={session.starred ? '取消收藏' : '收藏会话'}
+                  title={session.starred ? t('取消收藏') : t('收藏会话')}
                 >
                   <Star size={14} fill={session.starred ? 'currentColor' : 'none'} />
                 </button>
@@ -422,7 +431,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
                   {hasFolders && (
                     <button
                       className="text-neutral-500 hover:text-neutral-700 p-1 rounded-md hover:bg-neutral-100"
-                      title="移动到文件夹"
+                      title={t('移动到文件夹')}
                       onClick={(e) => {
                         e.stopPropagation();
                         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -463,7 +472,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
 
       {hasFolders && (
         <div className="px-4 pb-1 text-[11px] text-neutral-300 text-center">
-          拖动会话到文件夹即可归类
+          {t('拖动会话到文件夹即可归类')}
         </div>
       )}
 
@@ -473,7 +482,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
           onClick={handleCreateSession}
         >
           <Plus size={16} />
-          <span className="text-sm">新建会话</span>
+          <span className="text-sm">{t('新建会话')}</span>
         </button>
       </div>
 
@@ -481,14 +490,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
         <button
           className="flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
           onClick={() => onOpenSettings('models')}
-          title="设置"
+          title={t('设置')}
         >
           <Settings size={18} />
         </button>
         <button
           className="flex items-center justify-center p-2 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 rounded-md transition-colors"
           onClick={toggleTheme}
-          title={theme === 'dark' ? '切换到日间模式' : '切换到夜间模式'}
+          title={theme === 'dark' ? t('切换到日间模式') : t('切换到夜间模式')}
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
@@ -502,12 +511,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
             className="fixed z-50 w-44 bg-white border border-neutral-200 rounded-md shadow-lg py-1 text-sm"
             style={{ top: moveMenu.top, left: moveMenu.left }}
           >
-            <div className="px-3 py-1 text-[11px] text-neutral-400">移动到</div>
+            <div className="px-3 py-1 text-[11px] text-neutral-400">{t('移动到')}</div>
             <button
               className="w-full text-left px-3 py-1.5 hover:bg-neutral-50 flex items-center justify-between"
               onClick={() => { moveSessionToFolder(moveMenu.sessionId, null); setMoveMenu(null); }}
             >
-              <span>未分类</span>
+              <span>{t('未分类')}</span>
               {!sessions.find(s => s.id === moveMenu.sessionId)?.folderId && <Check size={13} className="text-neutral-400" />}
             </button>
             {folders.map(folder => {
@@ -532,7 +541,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings, collapsed, onToggleCo
               onClick={() => { setMoveMenu(null); setIsCreatingFolder(true); }}
             >
               <FolderPlus size={12} />
-              新建文件夹…
+              {t('新建文件夹…')}
             </button>
           </div>
         </>

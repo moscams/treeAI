@@ -7,8 +7,8 @@ import { useModelStore } from '../../stores/modelStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { gsap } from 'gsap';
 import { showSuccess, showInfo, showWarning } from '../../utils/notification';
-import { sanitizeHtml } from '../../utils/sanitize';
 import { NodeData } from '../../types';
+import { useT } from '../../i18n';
 
 const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   const { node, streamingResponse, streamingReasoning, autoFocus, onEdit, onAddChild, onDelete, onRetry, onResubmit, onModelChange, onTemperatureChange, onMaxTokensChange } = data;
@@ -19,6 +19,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   
   const { models } = useModelStore();
   const { theme } = useThemeStore();
+  const t = useT();
   
   // ---- 统计信息 ----
   const usage = node.usage;
@@ -34,6 +35,18 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   // 流式期间优先显示实时思维链；流完之后节点上持久化的值接管。
   const reasoningText = streamingReasoning || node.reasoning || '';
   const isLiveReasoning = !!streamingReasoning && !!node.isStreaming;
+
+  const hasAnswer = !!(node.assistantMessage || reasoningText);
+
+  /*
+   * 正文只用一个 MdPreview 渲染，流式和非流式共用同一个元素 ——
+   * 流式结束时只改 modelValue，不再从一个分支切到另一个分支。
+   * 之前流式/非流式各写一个 MdPreview，结束时 React 会重建（或中间出现
+   * 一帧什么都不渲染），表现就是「回答结束后闪一下、排版变一下」。
+   */
+  const answerText = (streamingResponse !== null && node.isStreaming)
+    ? streamingResponse
+    : node.assistantMessage;
 
   // 思维链一产生就自动展开，否则「流式显示」等于没显示。
   // 用 ref 保证每个节点只自动展开一次，之后尊重用户的折叠操作。
@@ -234,7 +247,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
     }
     
     // 显示通知
-    showSuccess('内容已复制到剪贴板');
+    showSuccess(t('内容已复制到剪贴板'));
   };
 
   // 滚轮处理：
@@ -271,10 +284,8 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
   }, [handleWheel]);
 
   return (
-    <div 
-      ref={nodeRef}
-      className="node-content bg-white rounded-lg overflow-hidden border border-neutral-200 shadow-minimal"
-    >
+    <div ref={nodeRef} className="relative">
+      <div className="node-content bg-white rounded-lg overflow-hidden border border-neutral-200 shadow-minimal">
       <Handle
         type="target"
         position={Position.Top}
@@ -284,14 +295,14 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
       <div className="flex justify-between items-center p-2 text-neutral-700 border-b border-neutral-100 shrink-0">
         <div className="flex items-center">
           <MessageSquare size={14} className="mr-1.5 text-neutral-500" />
-          <span className="text-xs font-medium">对话节点</span>
+          <span className="text-xs font-medium">{t('对话节点')}</span>
         </div>
         
         <div className="flex space-x-1 node-toolbar">
           <button 
             className="p-1 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded transition-colors"
             onClick={() => setShowSettings(!showSettings)}
-            title="模型设置"
+            title={t('模型设置')}
           >
             <Settings size={12} />
           </button>
@@ -299,9 +310,9 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             className="p-1 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded transition-colors"
             onClick={() => {
               onDelete(node.id);
-              showWarning('节点已删除');
+              showWarning(t('节点已删除'));
             }}
-            title="删除节点"
+            title={t('删除节点')}
           >
             <Trash2 size={12} />
           </button>
@@ -312,7 +323,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         <div className="p-3 bg-neutral-50 border-b border-neutral-100 shrink-0">
           <div className="mb-3">
             <label className="block text-xs font-medium text-neutral-700 mb-1">
-              模型
+              {t('模型')}
             </label>
             <select
               value={node.modelId || ''}
@@ -331,7 +342,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
           <div className="mb-3">
             <div className="flex justify-between items-center mb-1">
               <label className="block text-xs font-medium text-neutral-700">
-                温度
+                {t('温度')}
               </label>
               <span className="text-xs text-neutral-500">{node.temperature.toFixed(1)}</span>
             </div>
@@ -349,7 +360,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-xs font-medium text-neutral-700">
-                最大令牌数
+                {t('最大令牌数')}
               </label>
               <span className="text-xs text-neutral-500">{node.maxTokens}</span>
             </div>
@@ -384,11 +395,11 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
               onBlur={() => {
                 onEdit(node.id, userMessage, 'user', false);
                 if (userMessage.trim() && userMessage !== node.userMessage) {
-                  showInfo('消息已保存');
+                  showInfo(t('消息已保存'));
                 }
               }}
-              className="w-full p-2.5 border border-neutral-200 rounded-md focus:outline-none focus:ring-1 focus:ring-neutral-400 text-[17px] leading-relaxed"
-              placeholder="在此输入您的消息..."
+              className="w-full p-2.5 border border-neutral-200 rounded-md focus:outline-none focus:ring-1 focus:ring-neutral-400 text-[19px] leading-relaxed"
+              placeholder={t('在此输入您的消息...')}
               onKeyDown={handleKeyDown}
               rows={3}
             />
@@ -455,9 +466,9 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             >
               <span className="flex items-center">
                 <Brain size={12} className="mr-1.5" />
-                思考过程 · {reasoningText.length} 字
+                {t('思考过程 · {n} 字', { n: reasoningText.length })}
                 {isLiveReasoning && (
-                  <span className="ml-1.5 animate-pulse text-neutral-400">思考中…</span>
+                  <span className="ml-1.5 animate-pulse text-neutral-400">{t('思考中…')}</span>
                 )}
               </span>
               <ChevronDown
@@ -476,7 +487,7 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
           </div>
         ) : null}
 
-        {(streamingResponse !== null && node.isStreaming) ? (
+        {answerText ? (
           <div className="relative group">
             <div 
               className="preview-container"
@@ -486,109 +497,79 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
             >
               <MdPreview 
                 editorId={`preview-${node.id}`}
-                modelValue={streamingResponse}
+                modelValue={answerText}
                 theme={theme}
                 // mermaid 从 CDN 加载的体积高达 743KB（gzip），而且是不管内容里
                 // 有没有图都会加载。关掉后 mermaid 代码块会降级成普通代码块。
                 // 想要的话：本地打包 mermaid，删掉这行，再仿照 katex 加一套 shim。
                 noMermaid
-                // 必须洗：md-editor-rt 的 sanitize 默认是恒等函数（不洗），
-                // 模型回答里塞的 <script>/<img onerror> 会真执行（见 utils/sanitize.ts）。
-                sanitize={sanitizeHtml}
                 className="md-preview overflow-auto break-words"
                 style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
                 previewTheme="vuepress"
               />
             </div>
-          </div>
-        ) : node.assistantMessage ? (
-          <div className="relative group">
-            <div 
-              className="preview-container"
-              onWheel={(e: React.WheelEvent) => {
-                e.stopPropagation();
-              }}
-            >
-              <MdPreview 
-                editorId={`preview-${node.id}`}
-                modelValue={node.assistantMessage}
-                theme={theme}
-                // 同上面那处：mermaid 太重，关掉（降级为普通代码块）
-                noMermaid
-                // 同上：非流式的历史消息同样要清洗
-                sanitize={sanitizeHtml}
-                className="md-preview overflow-auto break-words"
-                style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
-                previewTheme="vuepress"
-              />
-            </div>
-            <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
-                onClick={() => handleCopyToClipboard(node.assistantMessage)}
-                title="Copy"
-              >
-                <Copy size={14} />
-              </button>
-            </div>
+            {/* 复制按钮只靠绝对定位多出来，不参与布局，所以出现时不会把排版顶动 */}
+            {!node.isStreaming && (
+              /* 复制/重试改成悬停浮层，绝对定位、不参与布局 —— 底栏整条省掉。 */
+              <div className="absolute top-0 right-0 flex gap-0.5 rounded-bl-md bg-white/85 px-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+                  onClick={() => handleCopyToClipboard(node.assistantMessage)}
+                  title={t('复制到剪贴板')}
+                >
+                  <Copy size={14} />
+                </button>
+                <button
+                  className="p-1 text-gray-500 hover:text-blue-600 transition-colors"
+                  onClick={() => onRetry(node.id)}
+                  title={t('重新生成回复（另起一个新分支，保留当前回答）')}
+                >
+                  <RefreshCcw size={14} />
+                </button>
+              </div>
+            )}
           </div>
         ) : !node.isStreaming ? (
-          <div className="text-neutral-400 italic min-h-[160px] text-sm">
-            {node.error ? '请点击重试获取AI回复' : 'AI回复将显示在这里'}
+          <div className="flex min-h-[160px] flex-col items-center justify-center gap-3 text-sm italic text-neutral-400">
+            <span>{node.error ? t('请求失败，可重试') : t('AI回复将显示在这里')}</span>
+            {/* 失败时把重试按钮放身边：底栏没了，不能让用户找不到重试入口 */}
+            {node.error && (
+              <button
+                type="button"
+                onClick={() => onRetry(node.id)}
+                className="flex items-center gap-1 rounded-md bg-neutral-900 px-3 py-1.5 text-xs not-italic text-white transition-colors hover:bg-neutral-700"
+              >
+                <RefreshCcw size={12} />
+                {t('重试')}
+              </button>
+            )}
           </div>
         ) : null}
 
         {!node.isStreaming && answerChars > 0 ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 pt-2 border-t border-neutral-100 text-[11px] text-neutral-400">
-            <span>{answerChars} 字</span>
+            <span>{t('{n} 字', { n: answerChars })}</span>
             {tokensPerSecond !== null && (
-              <span title="输出速度（含首字延迟）">~{tokensPerSecond} tok/s</span>
+              <span title={t('输出速度（含首字延迟）')}>~{tokensPerSecond} tok/s</span>
             )}
             {cacheRate !== null && (
               <span
                 className={cacheRate >= 50 ? 'text-emerald-600 dark:text-emerald-400' : undefined}
-                title={`命中缓存 ${usage?.cacheHitTokens} tok，未命中 ${usage?.cacheMissTokens} tok`}
+                title={t('命中缓存 {hit} tok，未命中 {miss} tok', { hit: usage?.cacheHitTokens ?? 0, miss: usage?.cacheMissTokens ?? 0 })}
               >
-                缓存 {cacheRate}%
+                {t('缓存 {n}%', { n: cacheRate })}
               </span>
             )}
             {usage && (
-              <span title="输入 token · 输出 token">
-                入 {usage.promptTokens} · 出 {usage.completionTokens}
+              <span title={t('输入 token · 输出 token')}>
+                ↓ {usage.promptTokens} · ↑ {usage.completionTokens}
               </span>
             )}
             {usage?.reasoningTokens ? (
-              <span title="思考消耗的 token">思考 {usage.reasoningTokens}</span>
+              <span title={t('思考消耗的 token')}>{t('思考 {n}', { n: usage.reasoningTokens })}</span>
             ) : null}
           </div>
         ) : null}
-      </div>
-
-      <div className="flex justify-between items-center border-t border-neutral-100 p-2 shrink-0">
-        <div className="flex space-x-2">
-          <button 
-            onClick={() => handleCopyToClipboard(node.assistantMessage)}
-            className="p-1 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded transition-colors"
-            title="复制到剪贴板"
-          >
-            <Copy size={14} />
-          </button>
-          <button 
-            onClick={() => onRetry(node.id)} 
-            className="p-1 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50 rounded transition-colors"
-            title="重新生成回复（另起一个新分支，保留当前回答）"
-          >
-            <RefreshCcw size={14} />
-          </button>
-        </div>
-        
-        <button 
-          className="flex items-center justify-center p-1.5 bg-neutral-900 text-white rounded-full hover:bg-neutral-800 transition-colors"
-          onClick={() => onAddChild(node.id)}
-          title="添加子节点"
-        >
-          <Plus size={14} />
-        </button>
       </div>
 
       <Handle
@@ -596,6 +577,24 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
         position={Position.Bottom}
         className="!bg-neutral-400 !border-white"
       />
+      </div>
+
+      {/* 底部「+」悬浮在节点外沿上：绝对定位在 .node-content 之外（外层 wrapper
+          不能有 overflow:hidden，否则会被裁掉），因此不占任何布局高度。
+          它正好压在底部连线上，视觉上像「从这条线继续长出去」。 */}
+      <button
+        type="button"
+        className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full border shadow-sm transition-colors ${
+          hasAnswer
+            ? 'bg-neutral-900 text-white border-neutral-900 hover:bg-neutral-700'
+            : 'bg-white text-neutral-300 border-neutral-200 cursor-not-allowed'
+        }`}
+        onClick={() => { if (hasAnswer) onAddChild(node.id); }}
+        disabled={!hasAnswer}
+        title={hasAnswer ? t('添加子节点') : t('先让这个节点得到回答，再从这里追问')}
+      >
+        <Plus size={14} />
+      </button>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { Session, Model, Folder } from '../types';
+import { t } from '../i18n';
 
 /**
  * 会话备份的文件格式。
@@ -103,33 +104,36 @@ export function parseExportFile(text: string): { data: ParsedExportFile } | { er
   try {
     raw = JSON.parse(text);
   } catch {
-    return { error: '不是有效的 JSON 文件' };
+    return { error: t('不是有效的 JSON 文件') };
   }
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { error: '文件内容不是一个对象' };
+    return { error: t('文件内容不是一个对象') };
   }
 
   const file = raw as Partial<SessionExportFile>;
 
   if (file.format !== EXPORT_FORMAT) {
-    return { error: '这不是 Tree AI Plus 导出的备份文件' };
+    return { error: t('这不是 Tree AI Plus 导出的备份文件') };
   }
   if (typeof file.version !== 'number') {
-    return { error: '文件缺少版本号' };
+    return { error: t('文件缺少版本号') };
   }
   if (file.version > EXPORT_VERSION) {
     return {
-      error: `文件版本 v${file.version} 比当前程序新（最高支持 v${EXPORT_VERSION}），请先升级`
+      error: t('文件版本 v{v} 比当前程序新（最高支持 v{max}），请先升级', {
+        v: file.version,
+        max: EXPORT_VERSION,
+      }),
     };
   }
   if (!Array.isArray(file.sessions)) {
-    return { error: '文件里没有 sessions 数组' };
+    return { error: t('文件里没有 sessions 数组') };
   }
 
   const sessions = file.sessions.filter(isValidSession);
   if (sessions.length === 0) {
-    return { error: '文件里没有有效的会话' };
+    return { error: t('文件里没有有效的会话') };
   }
 
   const models = Array.isArray(file.models) ? file.models.filter(isValidModel) : [];

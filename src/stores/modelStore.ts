@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Model } from '../types';
 import db from '../db/db';
 import { showError, showInfo, showSuccess } from '../utils/notification';
+import { t } from '../i18n';
 
 export interface ModelImportResult {
   added: number;
@@ -87,9 +88,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
           defaultModelId: state.defaultModelId ?? withOrder.id
         };
       });
-      showSuccess('模型创建成功');
+      showSuccess(t('模型创建成功'));
     } catch (error: unknown) {
-      showError('模型创建失败:' + getErrorMessage(error));
+      showError(t('模型创建失败: {msg}', { msg: getErrorMessage(error) }));
       console.error('Failed to create model:', error);
     }
   },
@@ -107,9 +108,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
           defaultModelId: models.length > 0 ? models[0].id : null
         };
       });
-      showSuccess('模型更新成功');
+      showSuccess(t('模型更新成功'));
     } catch (error: unknown) {
-      showError('模型更新失败：' + getErrorMessage(error));
+      showError(t('模型更新失败：{msg}', { msg: getErrorMessage(error) }));
       console.error('Failed to update model:', error);
     }
   },
@@ -124,9 +125,9 @@ export const useModelStore = create<ModelState>((set, get) => ({
           defaultModelId: models.length > 0 ? models[0].id : null
         };
       });
-      showInfo('模型已删除');
+      showInfo(t('模型已删除'));
     } catch (error: unknown) {
-      showError('模型删除失败:' + getErrorMessage(error));
+      showError(t('模型删除失败: {msg}', { msg: getErrorMessage(error) }));
       console.error('Failed to delete model:', error);
     }
   },
@@ -150,7 +151,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
     try {
       await Promise.all(ordered.map(m => db.saveModel(m)));
     } catch (error: unknown) {
-      showError('调整顺序失败:' + getErrorMessage(error));
+      showError(t('调整顺序失败: {msg}', { msg: getErrorMessage(error) }));
       console.error('Failed to reorder models:', error);
     }
   },
