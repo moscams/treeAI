@@ -131,6 +131,41 @@
 - 现有 `importModels` / `importSessions` 就是**永远追加、按 id 去重跳过、绝不覆盖**，符合预期。
   备份文件里的 `apiKey` 是空的，绝不能覆盖本机已填好的密钥。
 
+## 本轮修复（XSS + 重新排布丢更新）
+
+### 1. XSS（真实漏洞，实测可执行）
+
+- **根因**：`md-editor-rt` 的 `MdPreview` 有个 `sanitize` prop，**默认是恒等函数**
+  `(text) => text`（见它的类型声明里的 `@default`），等于不洗；而 markdown-it
+  默认 `html: true`。所以模型回答（或导入的备份正文）里写 `<img src=x onerror=...>`、
+  `<script>`、`<svg onload>` 会被**原样插进 DOM 并执行**，`javascript:` 链接也不拦。
+- **危害**：API Key 就在同一个 origin 的 IndexedDB 里，一旦执行就能被读走。
+- **修复**：新增 `src/utils/sanitize.ts`，用 `xss`（`md-editor-rt` 自己的依赖）的
+  `filterXSS`，并给它一个在默认白名单基础上补了 `class`/`style` 的自定义白名单——
+  不补的话 KaTeX 的排版和 highlight.js 的着色会被一起洗掉。
+  ChatNode 的两处 `<MdPreview>` 都传 `sanitize={sanitizeHtml}`。
+- **实测**：灌 `<img onerror>`/`<script>`/`<iframe javascript:>`/`<svg onload>`/
+  `[x](javascript:)`，修复前 `window.__x1 === true`（真执行），修复后 6 个 flag 全 false、
+  DOM 里无注入元素；同时 KaTeX `.katex`、`.hljs-keyword`、表格仍正常渲染。
+- `xss` 已加进 `package.json` 的 dependencies（之前只是 `md-editor-rt` 的传递依赖）。
+
+### 2. 重新排布只生效一个节点（丢失更新）
+
+- **现象**：点右下「重新排布节点」后，大部分节点纹丝不动，个别节点却换到新坐标
+  压在兄弟节点身上（用户反馈「往左偏一点点、第二三张卡片贴上」）。
+- **根因**：`calculateNodeLayout(true)` 在 `.map()` 里**循环**调用 `updateNodeInSession`；
+  而 `updateSession` 是 `async` 且**先 `await db.saveSession()` 再 `set()`**。循环是同步的，
+  每次调用都还在 await 期间，于是都从 `get()` 读到同一份旧 session，各自造一个
+  「只改了一个节点」的快照去覆盖 —— 最后落库的那个（节点数组里最后一个）赢，
+  其余全部回退。
+- **修复**（两层）：
+  1. `sessionStore.updateSession` 改成**先同步 `set` 再异步落库**，根除同一轮连续更新的
+     互相覆盖（影响面不止重排）。
+  2. 新增 `replaceSessionNodes(sessionId, nodes)`，`calculateNodeLayout` 把新坐标收集成一个
+     Map，最后**一次性**写回，而不是循环 N 次。
+- **实测**：修复前 reorg 后 5 个节点只有新节点动（跑到 `(500,716)` 压住 B/C）；
+  修复后 n1/A/B/C/新节点全部归位，B/C/新节点同 y、相邻间距正好 220px。
+
 ### 自动化检查
 
 - `node scripts/smoke-check.mjs`：headless Edge + CDP 跑真实应用，断言「全部/文件夹筛选/

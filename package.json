@@ -43,7 +43,8 @@
     "react-dom": "^18.3.1",
     "react-dropzone": "^14.2.3",
     "reactflow": "^11.10.4",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "xss": "^1.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",

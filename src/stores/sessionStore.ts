@@ -28,6 +28,8 @@ interface SessionState {
   deleteSession: (id: string) => void;
   addNodeToSession: (sessionId: string, node: ChatNode) => void;
   updateNodeInSession: (sessionId: string, node: ChatNode) => void;
+  /** 一次性替换整个节点数组（重新排布专用，避免循环写回丢更新） */
+  replaceSessionNodes: (sessionId: string, nodes: ChatNode[]) => void;
   deleteNodeFromSession: (sessionId: string, nodeId: string) => void;
   setSearchQuery: (query: string) => void;
   importSessions: (sessions: Session[]) => Promise<ImportResult>;
@@ -150,21 +152,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   updateSession: async (session) => {
-    try {
-      const updatedSession = {
-        ...session,
-        updatedAt: new Date().toISOString()
+    const updatedSession = {
+      ...session,
+      updatedAt: new Date().toISOString()
+    };
+    // 先同步写内存，再异步落库。顺序不能反。
+    //
+    // 反着写（先 await db.saveSession 再 set）会「丢失更新」：await 期间
+    // 调用方的 get() 仍读到旧状态，于是同一轮里连续多次更新的快照互相覆盖，
+    // 只有最后一次生效。重新排布逐节点写回坐标时就是这么丢的 ——
+    // 表现是大部分节点纹丝不动，个别节点却跑到新位置压在别人身上。
+    set((state) => {
+      const sessions = sortSessions(
+        state.sessions.map(s => (s.id === session.id ? updatedSession : s))
+      );
+      return {
+        sessions,
+        filteredSessions: computeVisible(sessions, state.searchQuery, state.currentFolderView)
       };
+    });
+    try {
       await db.saveSession(updatedSession);
-      set((state) => {
-        const sessions = sortSessions(
-          state.sessions.map(s => (s.id === session.id ? updatedSession : s))
-        );
-        return {
-          sessions,
-          filteredSessions: computeVisible(sessions, state.searchQuery, state.currentFolderView)
-        };
-      });
     } catch (error) {
       console.error('Failed to update session:', error);
     }
@@ -220,6 +228,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     };
 
     get().updateSession(updatedSession);
+  },
+
+  replaceSessionNodes: (sessionId, nodes) => {
+    const session = get().sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    // 复用 updateSession 这条路径（落库 / 排序 / 过滤都在里面）。
+    // 关键是「一次调用」，而不是循环 N 次 —— 循环会因为异步落库丢更新。
+    get().updateSession({ ...session, nodes });
   },
 
   deleteNodeFromSession: (sessionId, nodeId) => {

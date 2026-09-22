@@ -7,6 +7,7 @@ import { useModelStore } from '../../stores/modelStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { gsap } from 'gsap';
 import { showSuccess, showInfo, showWarning } from '../../utils/notification';
+import { sanitizeHtml } from '../../utils/sanitize';
 import { NodeData } from '../../types';
 
 const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
@@ -491,6 +492,9 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
                 // 有没有图都会加载。关掉后 mermaid 代码块会降级成普通代码块。
                 // 想要的话：本地打包 mermaid，删掉这行，再仿照 katex 加一套 shim。
                 noMermaid
+                // 必须洗：md-editor-rt 的 sanitize 默认是恒等函数（不洗），
+                // 模型回答里塞的 <script>/<img onerror> 会真执行（见 utils/sanitize.ts）。
+                sanitize={sanitizeHtml}
                 className="md-preview overflow-auto break-words"
                 style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
                 previewTheme="vuepress"
@@ -511,6 +515,8 @@ const ChatNode: React.FC<NodeProps<NodeData>> = ({ id, data }) => {
                 theme={theme}
                 // 同上面那处：mermaid 太重，关掉（降级为普通代码块）
                 noMermaid
+                // 同上：非流式的历史消息同样要清洗
+                sanitize={sanitizeHtml}
                 className="md-preview overflow-auto break-words"
                 style={{ backgroundColor: 'transparent', maxWidth: '100%' }}
                 previewTheme="vuepress"

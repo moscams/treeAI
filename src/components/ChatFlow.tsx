@@ -108,7 +108,7 @@ interface ChatFlowProps {
 }
 
 const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
-  const { sessions, addNodeToSession, updateNodeInSession, deleteNodeFromSession, autoTitleSession } = useSessionStore();
+  const { sessions, addNodeToSession, updateNodeInSession, replaceSessionNodes, deleteNodeFromSession, autoTitleSession } = useSessionStore();
   const { models, defaultModelId } = useModelStore();
   const { theme } = useThemeStore();
   const session = sessions.find(s => s.id === sessionId);
@@ -252,6 +252,11 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       calculateNodePosition(systemNode.id, -rootWidth / 2, 0, 0);
     }
   
+    // 强制重排时，把新坐标先收集起来，最后一次性写回。
+    // 不能在 .map 里逐个 updateNodeInSession —— 那是同步循环里连发 N 次异步
+    // updateSession，会互相覆盖，只有最后一个节点的新坐标存得下来。
+    const recalculatedPositions = new Map<string, { x: number; y: number }>();
+
     const reactFlowNodes = session.nodes.map(node => {
       // 强制重新布局 或 节点没有保存位置时，使用计算的位置
       let position: { x: number, y: number };
@@ -260,16 +265,12 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
       } else {
         const calculatedPosition = nodePositions.get(node.id);
         position = calculatedPosition || { x: 0, y: 0 };
-        
-        // 如果是强制重新布局，保存新位置到 session
+
         if (forceRecalculate) {
-          updateNodeInSession(sessionId, {
-            ...node,
-            position: { x: position.x, y: position.y }
-          });
+          recalculatedPositions.set(node.id, position);
         }
       }
-      
+
       return buildFlowNode(node, position, {
         ...nodeCallbacks,
         node,
@@ -279,6 +280,18 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
         autoFocus: pendingFocusId === node.id
       }, flowNodesRef.current.get(node.id));
     });
+
+    // 一次写回全部新坐标（而不是循环 N 次），否则会丢更新。
+    if (recalculatedPositions.size > 0) {
+      replaceSessionNodes(
+        sessionId,
+        session.nodes.map(n =>
+          recalculatedPositions.has(n.id)
+            ? { ...n, position: recalculatedPositions.get(n.id)! }
+            : n
+        )
+      );
+    }
 
     setNodes(reactFlowNodes);
     commitEdges(buildFlowEdges(session.nodes));
@@ -290,7 +303,7 @@ const ReactFlowWrapper: React.FC<ChatFlowProps> = ({ sessionId }) => {
   
   // The handlers below intentionally read the latest session state from this render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, nodeDimensions, streamingResponses, streamingReasoning, sessionId, updateNodeInSession]);  
+  }, [session, nodeDimensions, streamingResponses, streamingReasoning, sessionId, replaceSessionNodes]);  
 
 
   /**
